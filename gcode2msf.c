@@ -5,6 +5,7 @@
 #include <math.h>
 
 #define MAX_RUNS	100000
+#define N_DRIVES	4
 
 typedef struct {
     enum {
@@ -34,7 +35,21 @@ typedef struct {
     double z;
     double e;
     int	   t;
+    int    pre_transition;
 } run_t;
+
+typedef struct {
+    double z;
+    double h;
+    int	transition0;
+    int n_transitions;
+    double mm;
+} layer_t;
+
+typedef struct {
+    int from, to;
+    double mm;
+} transition_t;
 
 static FILE *f;
 
@@ -56,10 +71,16 @@ static int started = 0;
 static run_t runs[MAX_RUNS];
 static int n_runs = 0;
 
+static layer_t layers[MAX_RUNS];
+static int n_layers;
+static transition_t transitions[MAX_RUNS];
+static int n_transitions = 0;
+static double target_pct = 0.2;
+
 struct {
     int  id;
     const char *name;
-} materials[4] = {
+} materials[N_DRIVES] = {
     { 1, "Orange PLA" },
     { -1, NULL },
     { -1, NULL },
@@ -200,6 +221,7 @@ add_run()
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
+	runs[n_runs].pre_transition = -1;
 	n_runs++;
     }
 }
@@ -271,11 +293,41 @@ preprocess()
     }
 }
 
+static transition_t *
+get_pre_transition(int j)
+{
+    if (runs[j].pre_transition >= 0) return &transitions[runs[j].pre_transition];
+    else return NULL;
+}
+
+static double
+get_pre_transition_mm(int j)
+{
+    transition_t *t = get_pre_transition(j);
+    return t ? target_pct * t->mm : 0;
+}
+
+static transition_t *
+get_post_transition(int j)
+{
+    if (j+1 < n_runs && runs[j+1].pre_transition >= 0) {
+	return &transitions[runs[j+1].pre_transition];
+    } else return NULL;
+}
+
+static double
+get_post_transition_mm(int j)
+{
+    transition_t *t = get_post_transition(j);
+    return t ? (1-target_pct) * t->mm : 0;
+}
+
 static void
 output_summary()
 {
     int i, j;
-    double tool_total[10] = { 0, };
+    double tool_mm[N_DRIVES] = { 0, };
+    double tool_waste[N_DRIVES] = { 0, };
 
     printf("Layer by layer extrusions\n");
     printf("-------------------------\n");
@@ -290,26 +342,89 @@ output_summary()
     printf("Extruder by extruder extrusions\n");
     printf("-------------------------------\n");
     for (i = 0; i < n_runs; i = j) {
-	double total = 0;
+	double mm = 0, waste = 0;
 	for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
-	    total += runs[j].e;
+	    mm += runs[j].e;
+	    waste += get_pre_transition_mm(j) + get_post_transition_mm(j);
 	}
-	tool_total[runs[i].t] += total;
-	printf("T%d %10.4f mm\n", runs[i].t, total);
+	tool_mm[runs[i].t] += mm;
+	tool_waste[runs[i].t] += waste;
+	printf("T%d %10.4f mm %10.4f waste\n", runs[i].t, mm, waste);
     }
-    for (i = 0; i < 10; i++) {
-	if (tool_total[i] != 0) printf("   TOTAL: T%d %10.2f mm\n", i, tool_total[i]);
+    for (i = 0; i < N_DRIVES; i++) {
+	if (tool_mm[i] + tool_waste[i] != 0) printf("   TOTAL: T%d %10.2f mm %10.2f waste\n", i, tool_mm[i], tool_waste[i]);
     }
+    printf("\n");
+    printf("Transition block\n");
+    printf("----------------\n");
+    for (i = 0; i < n_layers; i++) {
+	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions);
+    }
+}
+
+static double
+transition_length(int from, int to)
+{
+    if (from == to) return 17.7;
+    else return 100;
+}
+
+static void
+add_transition(int from, int to, double z, run_t *run)
+{
+    if (n_layers == 0 || z > layers[n_layers-1].z) {
+	if (n_layers > 0) {
+	    layers[n_layers-1].h = z - layers[n_layers-1].z;
+	}
+	layers[n_layers].z = z;
+	layers[n_layers].h = -1;
+	layers[n_layers].transition0 = n_transitions;
+	layers[n_layers].n_transitions = 0;
+	layers[n_layers].mm = 0;
+	n_layers++;
+    }
+    run->pre_transition = n_transitions;
+    transitions[n_transitions].from = from;
+    transitions[n_transitions].to = to;
+    transitions[n_transitions].mm = transition_length(from, to);
+    layers[n_layers-1].mm += transitions[n_transitions].mm;
+    n_transitions++;
+    layers[n_layers-1].n_transitions++;
 }
 
 static void
 compute_transition_tower()
 {
+    int i;
+
+    for (i = 1; i < n_runs; i++) {
+	if (runs[i-1].t != runs[i].t) {
+	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i]);
+	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
+	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1]);
+	}
+    }
+}
+
+static void
+prune_transition_tower()
+{
+    int i;
+
+    while (n_layers > 0) {
+	transition_t *t = &transitions[layers[n_layers-1].transition0];
+
+	if (layers[n_layers-1].n_transitions > 1 || t->from != t->to) break;
+	n_layers--;
+    }
 }
 
 static void
 produce_msf(const char *fname)
 {
+    FILE *o = stdout;
+
+    fprintf(o, "MSF1.4\n");
 }
 
 static void
@@ -326,6 +441,7 @@ static void process(const char *fname)
 
     preprocess();
     compute_transition_tower();
+    prune_transition_tower();
     rewind(f);
     produce_msf(fname);
     rewind(f);
