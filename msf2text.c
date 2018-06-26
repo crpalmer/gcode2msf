@@ -84,15 +84,15 @@ main(int argc, char **argv)
 	} else if (STRNCMP(buf, "ppm:") == 0) {
 	    printf("Pulses per mm: %f\n", decode_float(&buf[4]));
 	} else if (STRNCMP(buf, "lo:") == 0) {
-	    printf("Loading offset: %d\n", decode_hex_def(&buf[4]));
+	    printf("Loading offset: %d\n", decode_hex_def(&buf[3]));
 	} else if (STRNCMP(buf, "ns:") == 0) {
-	    printf("# splices: %d\n", decode_hex_def(&buf[4]));
+	    printf("# splices: %d\n", decode_hex_def(&buf[3]));
 	} else if (STRNCMP(buf, "np:") == 0) {
-	    printf("# pings: %d\n", decode_hex_def(&buf[4]));
+	    printf("# pings: %d\n", decode_hex_def(&buf[3]));
 	} else if (STRNCMP(buf, "nh:") == 0) {
 	    printf("I don't know what nh is\n");
 	} else if (STRNCMP(buf, "na:") == 0) {
-	    printf("# splice settings: %d\n", decode_hex_def(&buf[4]));
+	    printf("# splice settings: %d\n", decode_hex_def(&buf[3]));
 	} else if (buf[0] == '(') {
 	    int cmd;
 
