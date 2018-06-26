@@ -75,7 +75,6 @@ static layer_t layers[MAX_RUNS];
 static int n_layers;
 static transition_t transitions[MAX_RUNS];
 static int n_transitions = 0;
-static double target_pct = 0.2;
 
 struct {
     int  id;
@@ -94,7 +93,14 @@ struct {
 
 struct {
     double nozzle;
-} printer = { 0.4 };
+    double filament;
+} printer = { 0.4, 1.75 };
+
+struct {
+    double target_pct;
+    double min_density;
+    double transition_mm;
+} t_config = { 0.2, 0.05, 100 };
 
 static int
 find_arg(const char *buf, char arg, double *val)
@@ -304,7 +310,7 @@ static double
 get_pre_transition_mm(int j)
 {
     transition_t *t = get_pre_transition(j);
-    return t ? target_pct * t->mm : 0;
+    return t ? t_config.target_pct * t->mm : 0;
 }
 
 static transition_t *
@@ -319,7 +325,40 @@ static double
 get_post_transition_mm(int j)
 {
     transition_t *t = get_post_transition(j);
-    return t ? (1-target_pct) * t->mm : 0;
+    return t ? (1-t_config.target_pct) * t->mm : 0;
+}
+
+static double
+transition_block_layer_area(int layer)
+{
+    layer_t *l = &layers[layer];
+    return M_PI*printer.filament/2.0*printer.filament/2.0*l->mm / l->h;
+}
+
+static double
+transition_block_area()
+{
+    int i;
+    double area = 0;
+
+    for (i = 0; i < n_layers; i++) {
+	double la = transition_block_layer_area(i);
+	if (la > area) area = la;
+    }
+    return area;
+}
+
+static void
+transition_block_size(double xy[2])
+{
+    /* Make y = 2*x (or visa versa) then you get
+       area = x * 2*x = 2*x^2
+       x = sqrt(area) / sqrt(2)
+     */
+    double area = transition_block_area();
+    double x = sqrt(area) / sqrt(2);
+    xy[0] = x;
+    xy[1] = 2*x;
 }
 
 static void
@@ -355,18 +394,20 @@ output_summary()
 	if (tool_mm[i] + tool_waste[i] != 0) printf("   TOTAL: T%d %10.2f mm %10.2f waste\n", i, tool_mm[i], tool_waste[i]);
     }
     printf("\n");
-    printf("Transition block\n");
+    double t_xy[2];
+    transition_block_size(t_xy);
+    printf("Transition block: area %f dimensions %fx%f\n", transition_block_area(), t_xy[0], t_xy[1]);
     printf("----------------\n");
     for (i = 0; i < n_layers; i++) {
-	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions);
+	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d area=%f\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, transition_block_layer_area(i));
     }
 }
 
 static double
 transition_length(int from, int to)
 {
-    if (from == to) return 17.7;
-    else return 100;
+    if (from == to) return 17.7;	// TODO: Can I make this smaller unless we are doing a ping?
+    else return t_config.transition_mm;
 }
 
 static void
