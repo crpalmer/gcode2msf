@@ -38,15 +38,22 @@ decode_float(const char *s)
 static void
 report_drive(unsigned cmd)
 {
-    printf("DRIVE %d PRODUCE %f\n", cmd, decode_float(&buf[4]));
+    static double last = 0;
+    double v = decode_float(&buf[4]);
+
+    printf("DRIVE %d PRODUCE %f DELTA %f\n", cmd, v, v - last);
+    last = v;
 }
 
 static void
 report_ping()
 {
     static int n_pings = 0;
+    static double last = 0;
+    double v = decode_float(&buf[4]);
 
-    printf("PING %4d @ %f\n", ++n_pings, decode_float(&buf[4]));
+    printf("PING %4d @ %f DELTA %f\n", ++n_pings, v, v - last);
+    last = v;
 }
 
 static const char *
