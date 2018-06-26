@@ -42,6 +42,7 @@ static char buf[1024*1024];
 
 static int validate_only = 0;
 static int summary = 0;
+static int extrusions = 0;
 static int trace = 0;
 
 static double last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
@@ -161,6 +162,7 @@ show_extrusion(char chr, int force)
     last_reported_z = last_e_z;
     if (bad || acc_e != 0 || force) {
 	if (validate_only && ! bad) return;
+	if (! validate_only && ! extrusions) return;
 
 	printf("%c", chr);
 	if (seen_tool) printf(" T%d", tool);
@@ -293,6 +295,7 @@ int main(int argc, char **argv)
 	    if (strcmp(argv[1], "--validate") == 0) validate_only = 1;
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) trace = 1;
+	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
 	    else break;
 	    argc--;
 	    argv++;
