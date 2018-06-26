@@ -56,6 +56,25 @@ static int started = 0;
 static run_t runs[MAX_RUNS];
 static int n_runs = 0;
 
+struct {
+    int  id;
+    const char *name;
+} materials[4] = {
+    { 1, "Orange PLA" },
+    { -1, NULL },
+    { -1, NULL },
+    { 1, "White PLA" }
+};
+
+struct {
+    unsigned lv;
+    double ppm;
+} calibration = { 25821, 30.099659 };
+
+struct {
+    double nozzle;
+} printer = { 0.4 };
+
 static int
 find_arg(const char *buf, char arg, double *val)
 {
@@ -185,13 +204,9 @@ add_run()
     }
 }
 
-static void process(const char *fname)
+static void
+preprocess()
 {
-    if ((f = fopen(fname, "r")) == NULL) {
-	perror(fname);
-	return;
-    }
-
     while (1) {
 	token_t t = get_next_token();
 	switch(t.t) {
@@ -251,40 +266,72 @@ static void process(const char *fname)
 	    reset_state();
 	    break;
 	case DONE:
-	    goto done;
+	    return;
 	}
     }
+}
 
-done:
-    fclose(f);
-    if (summary) {
-	int i, j;
-	double tool_total[10] = { 0, };
+static void
+output_summary()
+{
+    int i, j;
+    double tool_total[10] = { 0, };
 
-	printf("Layer by layer extrusions\n");
-	printf("-------------------------\n");
-	for (i = 0; i < n_runs; i = j) {
-	    printf("%6.02f", runs[i].z);
-	    for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
-		printf(" %10.2f [%d]", runs[j].e, runs[j].t);
-	    }
-	    printf("\n");
+    printf("Layer by layer extrusions\n");
+    printf("-------------------------\n");
+    for (i = 0; i < n_runs; i = j) {
+	printf("%6.02f", runs[i].z);
+	for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
+	    printf(" %10.2f [%d]", runs[j].e, runs[j].t);
 	}
 	printf("\n");
-	printf("Extruder by extruder extrusions\n");
-	printf("-------------------------------\n");
-	for (i = 0; i < n_runs; i = j) {
-	    double total = 0;
-	    for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
-		total += runs[j].e;
-	    }
-	    tool_total[runs[i].t] += total;
-	    printf("T%d %10.4f mm\n", runs[i].t, total);
-	}
-	for (i = 0; i < 10; i++) {
-	    if (tool_total[i] != 0) printf("   TOTAL: T%d %10.2f mm\n", i, tool_total[i]);
-	}
     }
+    printf("\n");
+    printf("Extruder by extruder extrusions\n");
+    printf("-------------------------------\n");
+    for (i = 0; i < n_runs; i = j) {
+	double total = 0;
+	for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
+	    total += runs[j].e;
+	}
+	tool_total[runs[i].t] += total;
+	printf("T%d %10.4f mm\n", runs[i].t, total);
+    }
+    for (i = 0; i < 10; i++) {
+	if (tool_total[i] != 0) printf("   TOTAL: T%d %10.2f mm\n", i, tool_total[i]);
+    }
+}
+
+static void
+compute_transition_tower()
+{
+}
+
+static void
+produce_msf(const char *fname)
+{
+}
+
+static void
+produce_gcode(const char *gcode)
+{
+}
+
+static void process(const char *fname)
+{
+    if ((f = fopen(fname, "r")) == NULL) {
+	perror(fname);
+	return;
+    }
+
+    preprocess();
+    compute_transition_tower();
+    rewind(f);
+    produce_msf(fname);
+    rewind(f);
+    produce_gcode(fname);
+    fclose(f);
+    if (summary) output_summary();
 }
 
 int main(int argc, char **argv)
@@ -301,7 +348,10 @@ int main(int argc, char **argv)
 	    argv++;
     }
 
-    for (i = 1; i < argc; i++) {
-	process(argv[i]);
+    if (argc > 2) {
+	fprintf(stderr, "May only process 1 file per run!\n");
+	exit(0);
     }
+
+    process(argv[1]);
 }
