@@ -42,7 +42,7 @@ typedef struct {
     double z;
     double e;
     int	   t;
-    int    pre_transition;
+    int    pre_transition, post_transition;
 } run_t;
 
 typedef struct {
@@ -72,6 +72,7 @@ static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_
 static bb_t bb;
 static int tool = 0;
 static int seen_tool = 0;
+static int used_tool[N_DRIVES] = { 0, };
 static double tower_z = -1;
 static int in_tower = 0;
 static int seen_ping = 0;
@@ -93,7 +94,18 @@ struct {
     { 1, "Orange PLA" },
     { -1, NULL },
     { -1, NULL },
-    { 1, "White PLA" }
+    { 2, "White Soluble" }
+};
+
+#define N_SPLICING (N_DRIVES*N_DRIVES)
+struct {
+   int from, to;
+   double heat, compressing;
+   int reverse;
+} splicing[N_SPLICING] = {
+   { 1, 1, 9, 2, 0 },
+   { 1, 2, 6, 4, 0 },
+   { 2, 1, 6, 4, 1 },
 };
 
 typedef struct {
@@ -269,11 +281,14 @@ static void
 add_run()
 {
     if (acc_e != 0) {
+	used_tool[tool] = 1;
+
 	runs[n_runs].bb = bb;
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
 	runs[n_runs].pre_transition = -1;
+	runs[n_runs].post_transition = -1;
 	n_runs++;
     }
 }
@@ -350,6 +365,10 @@ preprocess()
     }
 }
 
+/* pre_transition is the amount of filament to consume for the transition prior to printing anything
+ * post_transition is the amount of filament to consume for the transition after printing everything
+ */
+
 static transition_t *
 get_pre_transition(int j)
 {
@@ -367,9 +386,8 @@ get_pre_transition_mm(int j)
 static transition_t *
 get_post_transition(int j)
 {
-    if (j+1 < n_runs && runs[j+1].pre_transition >= 0) {
-	return &transitions[runs[j+1].pre_transition];
-    } else return NULL;
+    if (runs[j].post_transition >= 0) return &transitions[runs[j].post_transition];
+    else return NULL;
 }
 
 static double
@@ -462,7 +480,7 @@ transition_length(int from, int to)
 }
 
 static void
-add_transition(int from, int to, double z, run_t *run)
+add_transition(int from, int to, double z, run_t *run, run_t *pre_run)
 {
     layer_t *layer;
 
@@ -480,6 +498,7 @@ add_transition(int from, int to, double z, run_t *run)
 	n_layers++;
     }
 
+    pre_run->post_transition = n_transitions;
     run->pre_transition = n_transitions;
     transitions[n_transitions].from = from;
     transitions[n_transitions].to = to;
@@ -499,9 +518,9 @@ compute_transition_tower()
 
     for (i = 1; i < n_runs; i++) {
 	if (runs[i-1].t != runs[i].t) {
-	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i]);
+	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1]);
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
-	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1]);
+	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1]);
 	}
     }
 }
@@ -510,12 +529,18 @@ static void
 prune_transition_tower()
 {
     int i;
+    int last_transition;
 
     while (n_layers > 0) {
 	transition_t *t = &transitions[layers[n_layers-1].transition0];
 
 	if (layers[n_layers-1].n_transitions > 1 || t->from != t->to) break;
 	n_layers--;
+    }
+    n_transitions = layers[n_layers-1].transition0 + layers[n_layers-1].n_transitions - 1;
+    for (i = 0; i < n_runs; i++) {
+	if (runs[i].pre_transition > n_transitions) runs[i].pre_transition = -1;
+	if (runs[i].post_transition > n_transitions) runs[i].post_transition = -1;
     }
 }
 
@@ -531,12 +556,105 @@ find_model_bb_to_tower_height()
     }
 }
 
+static char *
+float_to_hex(double f, char *buf)
+{
+    unsigned v;
+    if (f == 0) strcpy(buf, "0");
+    else {
+	int shift = 0;
+
+	if (f < 0) v = 1 << 31;
+	else v = 0;
+	f = fabs(f);
+
+	while (f >= 2) {
+	   f /= 2;
+	   shift++;
+	}
+	while (f < 1) {
+	   f *= 2;
+	   shift--;
+	}
+	f = f - 1;
+	v |= (unsigned) (f * (0x800000 + 0.5));
+	v |= (shift + 0x7f) << 23;
+
+	sprintf(buf, "%x", v);
+    }
+
+    return buf;
+}
+
+static void
+produce_msf_colours(FILE *o)
+{
+    int i;
+    int first = 1;
+
+    fprintf(o, "cu:");
+    for (i = 0; i < N_DRIVES; i++) {
+	if (used_tool[i]) {
+	    if (! first) fprintf(o, ";");
+	    first = 0;
+	    fprintf(o, "%d%s", materials[i].id, materials[i].name);
+	}
+    }
+    fprintf(o, "\n");
+}
+
+static void
+count_or_produce_splices(FILE *o, int *n_out)
+{
+    int i, j, n = 0;
+    char buf[20];
+    double mm = 0;
+
+    for (i = 0; i < n_runs; i = j) {
+	for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
+	    mm += get_pre_transition_mm(j);
+	    mm += runs[j].e;
+	    mm += get_post_transition_mm(j);
+	}
+	if (o) fprintf(o, "(%02x,%s)\n", runs[i].t, float_to_hex(mm, buf));
+	n++;
+    }
+
+    if (n_out) *n_out = n;
+}
+
+static void
+produce_msf_splices(FILE *o)
+{
+    count_or_produce_splices(o, NULL);
+}
+
+static int
+msf_n_splices()
+{
+    int n;
+
+    count_or_produce_splices(NULL, &n);
+    return n;
+}
+
 static void
 produce_msf(const char *fname)
 {
     FILE *o = stdout;
+    char buf[20];
 
     fprintf(o, "MSF1.4\n");
+    produce_msf_colours(o);
+    fprintf(o, "ppm:%s\n", float_to_hex(printer->ppm, buf));
+    fprintf(o, "lo:%s\n", float_to_hex(printer->lv, buf));
+    fprintf(o, "ns:%x\n", msf_n_splices());
+    fprintf(o, "np:0\n");
+    fprintf(o, "nh:0\n");
+    // TODO na:
+    produce_msf_splices(o);
+    // TODO pings
+    // produce_msf_splice_configuration(o);
 }
 
 static void
