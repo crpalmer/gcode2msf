@@ -9,6 +9,11 @@
 #define N_DRIVES	4
 
 typedef struct {
+    double x[2];
+    double y[2];
+} bb_t;
+
+typedef struct {
     enum {
 	MOVE,
 	START_TOWER,
@@ -33,7 +38,7 @@ typedef struct {
 } token_t;
 
 typedef struct {
-    double bb_x[2], bb_y[2];
+    bb_t   bb;
     double z;
     double e;
     int	   t;
@@ -41,7 +46,7 @@ typedef struct {
 } run_t;
 
 typedef struct {
-    double bb_x[2], bb_y[2];
+    bb_t   bb;
     double z;
     double h;
     int	transition0;
@@ -64,7 +69,7 @@ static int extrusions = 0;
 static int trace = 0;
 
 static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
-static double bb_x[2], bb_y[2];
+static bb_t bb;
 static int tool = 0;
 static int seen_tool = 0;
 static double tower_z = -1;
@@ -79,7 +84,7 @@ static layer_t layers[MAX_RUNS];
 static int n_layers;
 static transition_t transitions[MAX_RUNS];
 static int n_transitions = 0;
-static double model_bb_x[2], model_bb_y[2];
+static bb_t model_bb;
 
 struct {
     int  id;
@@ -106,6 +111,31 @@ struct {
     double min_density;
     double transition_mm;
 } t_config = { 0.2, 0.05, 100 };
+
+#define BB_PRINTF_ARGS(bb) (bb)->x[0], (bb)->y[0], (bb)->x[1], (bb)->y[1]
+
+static void
+bb_init(bb_t *bb)
+{
+    bb->x[0] = bb->y[0] = DBL_MAX;
+    bb->x[1] = bb->y[1] = -DBL_MAX;
+}
+
+static void
+bb_add_point(bb_t *bb, double x, double y)
+{
+    if (x < bb->x[0]) bb->x[0] = x;
+    if (x > bb->x[1]) bb->x[1] = x;
+    if (y < bb->y[0]) bb->y[0] = y;
+    if (y > bb->y[1]) bb->y[1] = y;
+}
+
+static void
+bb_add_bb(bb_t *dest, const bb_t *other)
+{
+    bb_add_point(dest, other->x[0], other->y[0]);
+    bb_add_point(dest, other->x[1], other->y[1]);
+}
 
 static int
 find_arg(const char *buf, char arg, double *val)
@@ -205,8 +235,7 @@ reset_state()
     start_e = last_e;
     acc_e = 0;
     seen_ping = 0;
-    bb_x[0] = bb_y[0] = DBL_MAX;
-    bb_x[1] = bb_y[1] = -DBL_MAX;
+    bb_init(&bb);
 }
 
 static void
@@ -233,10 +262,7 @@ static void
 add_run()
 {
     if (acc_e != 0) {
-	runs[n_runs].bb_x[0] = bb_x[0];
-	runs[n_runs].bb_x[1] = bb_x[1];
-	runs[n_runs].bb_y[0] = bb_y[0];
-	runs[n_runs].bb_y[1] = bb_y[1];
+	runs[n_runs].bb = bb;
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
@@ -253,10 +279,7 @@ preprocess()
 	token_t t = get_next_token();
 	switch(t.t) {
 	case MOVE:
-	    if (t.x.move.x < bb_x[0]) bb_x[0] = t.x.move.x;
-	    if (t.x.move.x > bb_x[1]) bb_x[1] = t.x.move.x;
-	    if (t.x.move.y < bb_y[0]) bb_y[0] = t.x.move.y;
-	    if (t.x.move.y > bb_y[1]) bb_y[1] = t.x.move.y;
+	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
 
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
@@ -417,10 +440,10 @@ output_summary()
     printf("\n");
     double t_xy[2];
     transition_block_size(t_xy);
-    printf("Transition block: area %f dimensions %fx%f model_bb=(%f,%f),(%f,%f)\n", transition_block_area(), t_xy[0], t_xy[1], model_bb_x[0], model_bb_y[0], model_bb_x[1], model_bb_y[1]);
+    printf("Transition block: area %f dimensions %fx%f model_bb=(%f,%f),(%f,%f)\n", transition_block_area(), t_xy[0], t_xy[1], BB_PRINTF_ARGS(&model_bb));
     printf("----------------\n");
     for (i = 0; i < n_layers; i++) {
-	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d area=%f bb=(%f,%f),(%f,%f)\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, transition_block_layer_area(i), layers[i].bb_x[0], layers[i].bb_y[0], layers[i].bb_x[1], layers[i].bb_y[1]);
+	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d area=%f bb=(%f,%f),(%f,%f)\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, transition_block_layer_area(i), BB_PRINTF_ARGS(&layers[i].bb));
     }
 }
 
@@ -441,8 +464,7 @@ add_transition(int from, int to, double z, run_t *run)
 	    layers[n_layers-1].h = z - layers[n_layers-1].z;
 	}
 	layer = &layers[n_layers];
-	layer->bb_x[0] = layer->bb_y[0] = DBL_MAX;
-	layer->bb_x[1] = layer->bb_y[1] = -DBL_MAX;
+	bb_init(&layer->bb);
 	layer->z = z;
 	layer->h = -1;
 	layer->transition0 = n_transitions;
@@ -460,10 +482,7 @@ add_transition(int from, int to, double z, run_t *run)
     layer = &layers[n_layers-1];
     layer->n_transitions++;
     layer->mm += transitions[n_transitions-1].mm;
-    if (run->bb_x[0] < layer->bb_x[0]) layer->bb_x[0] = run->bb_x[0];
-    if (run->bb_x[1] > layer->bb_x[1]) layer->bb_x[1] = run->bb_x[1];
-    if (run->bb_y[0] < layer->bb_y[0]) layer->bb_y[0] = run->bb_y[0];
-    if (run->bb_y[1] > layer->bb_y[1]) layer->bb_y[1] = run->bb_y[1];
+    bb_add_bb(&layer->bb, &run->bb);
 }
 
 static void
@@ -498,14 +517,10 @@ find_model_bb_to_tower_height()
 {
     int i;
 
-    model_bb_x[0] = model_bb_y[0] = DBL_MAX;
-    model_bb_x[1] = model_bb_y[1] = -DBL_MAX;
+    bb_init(&model_bb);
 
     for (i = 0; i < n_layers; i++) {
-	if (layers[i].bb_x[0] < model_bb_x[0]) model_bb_x[0] = layers[i].bb_x[0];
-	if (layers[i].bb_x[1] > model_bb_x[1]) model_bb_x[1] = layers[i].bb_x[1];
-	if (layers[i].bb_y[0] < model_bb_y[0]) model_bb_y[0] = layers[i].bb_y[0];
-	if (layers[i].bb_y[1] > model_bb_y[1]) model_bb_y[1] = layers[i].bb_y[1];
+	bb_add_bb(&model_bb, &layers[i].bb);
     }
 }
 
