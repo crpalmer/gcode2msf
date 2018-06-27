@@ -96,15 +96,22 @@ struct {
     { 1, "White PLA" }
 };
 
-struct {
+typedef struct {
+    const char *name;
     unsigned lv;
     double ppm;
-} calibration = { 25821, 30.099659 };
-
-struct {
     double nozzle;
     double filament;
-} printer = { 0.4, 1.75 };
+    double radius;
+    double size[2];
+} printer_t;
+
+static printer_t printers[] = {
+    { "TLM", 25821, 30.099659, 0.4, 1.75, 150, { NAN, NAN} },
+    { "Taz6", 25821, 30.099659, 0.4, 1.75, NAN, { 280, 280} }
+};
+
+static printer_t *printer = &printers[1];
 
 struct {
     double target_pct;
@@ -376,7 +383,7 @@ static double
 transition_block_layer_area(int layer)
 {
     layer_t *l = &layers[layer];
-    return M_PI*printer.filament/2.0*printer.filament/2.0*l->mm / l->h;
+    return M_PI*printer->filament/2.0*printer->filament/2.0*l->mm / l->h;
 }
 
 static double
