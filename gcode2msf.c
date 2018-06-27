@@ -647,7 +647,7 @@ produce_msf(const char *fname)
     fprintf(o, "MSF1.4\n");
     produce_msf_colours(o);
     fprintf(o, "ppm:%s\n", float_to_hex(printer->ppm, buf));
-    fprintf(o, "lo:%s\n", float_to_hex(printer->lv, buf));
+    fprintf(o, "lo:%x\n", printer->lv);
     fprintf(o, "ns:%x\n", msf_n_splices());
     fprintf(o, "np:0\n");
     fprintf(o, "nh:0\n");
