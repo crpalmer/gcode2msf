@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 
 #define MAX_RUNS	100000
 #define N_DRIVES	4
@@ -20,7 +21,7 @@ typedef struct {
     } t;
     union {
 	struct {
-	    double z, e;
+	    double x, y, z, e;
 	} move;
 	struct {
 	    int num, step;
@@ -32,6 +33,7 @@ typedef struct {
 } token_t;
 
 typedef struct {
+    double bb_x[2], bb_y[2];
     double z;
     double e;
     int	   t;
@@ -39,6 +41,7 @@ typedef struct {
 } run_t;
 
 typedef struct {
+    double bb_x[2], bb_y[2];
     double z;
     double h;
     int	transition0;
@@ -60,7 +63,8 @@ static int summary = 0;
 static int extrusions = 0;
 static int trace = 0;
 
-static double last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double bb_x[2], bb_y[2];
 static int tool = 0;
 static int seen_tool = 0;
 static double tower_z = -1;
@@ -75,6 +79,7 @@ static layer_t layers[MAX_RUNS];
 static int n_layers;
 static transition_t transitions[MAX_RUNS];
 static int n_transitions = 0;
+static double model_bb_x[2], model_bb_y[2];
 
 struct {
     int  id;
@@ -128,6 +133,8 @@ get_next_token_wrapped()
 	t.pos = ftell(f);
 	if (STRNCMP(buf, "G1 ") == 0) {
 	    t.t = MOVE;
+	    if (! find_arg(buf, 'X', &t.x.move.x)) t.x.move.x = last_x;
+	    if (! find_arg(buf, 'Y', &t.x.move.y)) t.x.move.y = last_y;
 	    if (! find_arg(buf, 'Z', &t.x.move.z)) t.x.move.z = last_z;
 	    if (! find_arg(buf, 'E', &t.x.move.e)) t.x.move.e = last_e;
 	    return t;
@@ -173,7 +180,7 @@ get_next_token()
     if (trace) {
 	printf("%8ld ", t.pos);
 	switch (t.t) {
-	case MOVE: printf("MOVE z=%f, e=%f\n", t.x.move.z, t.x.move.e); break;
+	case MOVE: printf("MOVE (%f,%f,%f) e=%f\n", t.x.move.x, t.x.move.y, t.x.move.z, t.x.move.e); break;
 	case START_TOWER: printf("START_TOWER\n"); break;
 	case END_TOWER: printf("END_TOWER\n"); break;
 	case PING: printf("PING %d.%d\n", t.x.ping.num, t.x.ping.step); break;
@@ -198,6 +205,8 @@ reset_state()
     start_e = last_e;
     acc_e = 0;
     seen_ping = 0;
+    bb_x[0] = bb_y[0] = DBL_MAX;
+    bb_x[1] = bb_y[1] = -DBL_MAX;
 }
 
 static void
@@ -224,6 +233,10 @@ static void
 add_run()
 {
     if (acc_e != 0) {
+	runs[n_runs].bb_x[0] = bb_x[0];
+	runs[n_runs].bb_x[1] = bb_x[1];
+	runs[n_runs].bb_y[0] = bb_y[0];
+	runs[n_runs].bb_y[1] = bb_y[1];
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
@@ -235,10 +248,16 @@ add_run()
 static void
 preprocess()
 {
+    reset_state();
     while (1) {
 	token_t t = get_next_token();
 	switch(t.t) {
 	case MOVE:
+	    if (t.x.move.x < bb_x[0]) bb_x[0] = t.x.move.x;
+	    if (t.x.move.x > bb_x[1]) bb_x[1] = t.x.move.x;
+	    if (t.x.move.y < bb_y[0]) bb_y[0] = t.x.move.y;
+	    if (t.x.move.y > bb_y[1]) bb_y[1] = t.x.move.y;
+
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
 		if (started) {
@@ -249,6 +268,8 @@ preprocess()
 		reset_state();
 	    }
 	    last_e = t.x.move.e;
+	    last_x = t.x.move.x;
+	    last_y = t.x.move.y;
 	    last_z = t.x.move.z;
 	    break;
 	case START_TOWER:
@@ -396,10 +417,10 @@ output_summary()
     printf("\n");
     double t_xy[2];
     transition_block_size(t_xy);
-    printf("Transition block: area %f dimensions %fx%f\n", transition_block_area(), t_xy[0], t_xy[1]);
+    printf("Transition block: area %f dimensions %fx%f model_bb=(%f,%f),(%f,%f)\n", transition_block_area(), t_xy[0], t_xy[1], model_bb_x[0], model_bb_y[0], model_bb_x[1], model_bb_y[1]);
     printf("----------------\n");
     for (i = 0; i < n_layers; i++) {
-	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d area=%f\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, transition_block_layer_area(i));
+	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d area=%f bb=(%f,%f),(%f,%f)\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, transition_block_layer_area(i), layers[i].bb_x[0], layers[i].bb_y[0], layers[i].bb_x[1], layers[i].bb_y[1]);
     }
 }
 
@@ -413,24 +434,36 @@ transition_length(int from, int to)
 static void
 add_transition(int from, int to, double z, run_t *run)
 {
+    layer_t *layer;
+
     if (n_layers == 0 || z > layers[n_layers-1].z) {
 	if (n_layers > 0) {
 	    layers[n_layers-1].h = z - layers[n_layers-1].z;
 	}
-	layers[n_layers].z = z;
-	layers[n_layers].h = -1;
-	layers[n_layers].transition0 = n_transitions;
-	layers[n_layers].n_transitions = 0;
-	layers[n_layers].mm = 0;
+	layer = &layers[n_layers];
+	layer->bb_x[0] = layer->bb_y[0] = DBL_MAX;
+	layer->bb_x[1] = layer->bb_y[1] = -DBL_MAX;
+	layer->z = z;
+	layer->h = -1;
+	layer->transition0 = n_transitions;
+	layer->n_transitions = 0;
+	layer->mm = 0;
 	n_layers++;
     }
+
     run->pre_transition = n_transitions;
     transitions[n_transitions].from = from;
     transitions[n_transitions].to = to;
     transitions[n_transitions].mm = transition_length(from, to);
-    layers[n_layers-1].mm += transitions[n_transitions].mm;
     n_transitions++;
-    layers[n_layers-1].n_transitions++;
+
+    layer = &layers[n_layers-1];
+    layer->n_transitions++;
+    layer->mm += transitions[n_transitions-1].mm;
+    if (run->bb_x[0] < layer->bb_x[0]) layer->bb_x[0] = run->bb_x[0];
+    if (run->bb_x[1] > layer->bb_x[1]) layer->bb_x[1] = run->bb_x[1];
+    if (run->bb_y[0] < layer->bb_y[0]) layer->bb_y[0] = run->bb_y[0];
+    if (run->bb_y[1] > layer->bb_y[1]) layer->bb_y[1] = run->bb_y[1];
 }
 
 static void
@@ -461,6 +494,22 @@ prune_transition_tower()
 }
 
 static void
+find_model_bb_to_tower_height()
+{
+    int i;
+
+    model_bb_x[0] = model_bb_y[0] = DBL_MAX;
+    model_bb_x[1] = model_bb_y[1] = -DBL_MAX;
+
+    for (i = 0; i < n_layers; i++) {
+	if (layers[i].bb_x[0] < model_bb_x[0]) model_bb_x[0] = layers[i].bb_x[0];
+	if (layers[i].bb_x[1] > model_bb_x[1]) model_bb_x[1] = layers[i].bb_x[1];
+	if (layers[i].bb_y[0] < model_bb_y[0]) model_bb_y[0] = layers[i].bb_y[0];
+	if (layers[i].bb_y[1] > model_bb_y[1]) model_bb_y[1] = layers[i].bb_y[1];
+    }
+}
+
+static void
 produce_msf(const char *fname)
 {
     FILE *o = stdout;
@@ -483,6 +532,7 @@ static void process(const char *fname)
     preprocess();
     compute_transition_tower();
     prune_transition_tower();
+    find_model_bb_to_tower_height();
     rewind(f);
     produce_msf(fname);
     rewind(f);
