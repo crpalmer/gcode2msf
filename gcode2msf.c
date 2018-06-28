@@ -4,15 +4,11 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include "bb.h"
 #include "materials.h"
 
 #define MAX_RUNS	100000
 #define N_DRIVES	4
-
-typedef struct {
-    double x[2];
-    double y[2];
-} bb_t;
 
 typedef struct {
     enum {
@@ -116,31 +112,6 @@ struct {
     double min_density;
     double transition_mm;
 } t_config = { 0.2, 0.05, 100 };
-
-#define BB_PRINTF_ARGS(bb) (bb)->x[0], (bb)->y[0], (bb)->x[1], (bb)->y[1]
-
-static void
-bb_init(bb_t *bb)
-{
-    bb->x[0] = bb->y[0] = DBL_MAX;
-    bb->x[1] = bb->y[1] = -DBL_MAX;
-}
-
-static void
-bb_add_point(bb_t *bb, double x, double y)
-{
-    if (x < bb->x[0]) bb->x[0] = x;
-    if (x > bb->x[1]) bb->x[1] = x;
-    if (y < bb->y[0]) bb->y[0] = y;
-    if (y > bb->y[1]) bb->y[1] = y;
-}
-
-static void
-bb_add_bb(bb_t *dest, const bb_t *other)
-{
-    bb_add_point(dest, other->x[0], other->y[0]);
-    bb_add_point(dest, other->x[1], other->y[1]);
-}
 
 static int
 find_arg(const char *buf, char arg, double *val)
