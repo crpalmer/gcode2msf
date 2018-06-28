@@ -434,13 +434,16 @@ static void
 output_summary()
 {
     int i, j;
+    int layer = 1;
+    double last_layer_z = 0;
     double tool_mm[N_DRIVES] = { 0, };
     double tool_waste[N_DRIVES] = { 0, };
 
     printf("Layer by layer extrusions\n");
     printf("-------------------------\n");
     for (i = 0; i < n_runs; i = j) {
-	printf("%6.02f", runs[i].z);
+	printf("%5d %6.02f %6.02f", layer++, runs[i].z - last_layer_z, runs[i].z);
+	last_layer_z = runs[i].z;
 	for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
 	    printf(" %10.2f [%d]", runs[j].e, runs[j].t);
 	}
@@ -485,13 +488,10 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run)
     layer_t *layer;
 
     if (n_layers == 0 || z > layers[n_layers-1].z) {
-	if (n_layers > 0) {
-	    layers[n_layers-1].h = z - layers[n_layers-1].z;
-	}
 	layer = &layers[n_layers];
 	bb_init(&layer->bb);
 	layer->z = z;
-	layer->h = -1;
+	layer->h = z - (n_layers ? layers[n_layers-1].z : 0);
 	layer->transition0 = n_transitions;
 	layer->n_transitions = 0;
 	layer->mm = 0;
