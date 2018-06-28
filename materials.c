@@ -3,6 +3,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <yaml.h>
+#include "gcode.h"
 #include "materials.h"
 #include "yaml-wrapper.h"
 
@@ -14,7 +15,23 @@ static int n_materials;
 static material_splice_t splices[MAX_SPLICES];
 static int n_splices;
 
+static active_material_t active_materials[N_DRIVES];
+
 static char buf[100*1024];
+
+static struct {
+    const char *colour;
+    colour_strength_t strength;
+} default_colour_strengths[] = {
+    { "Black",		STRONG },
+    { "Yellow",		WEAK },
+    { "White",		WEAK },
+    { "Transparent",	WEAK },
+    { "Orange",		MEDIUM },
+    { "Green",		STRONG },
+};
+
+#define N_DEFAULT_COLOUR_STRENGTHS (sizeof(default_colour_strengths) / sizeof(default_colour_strengths[0]))
 
 static material_t *
 find_or_create_material(const char *name)
@@ -123,6 +140,20 @@ process_material(yaml_wrapper_t *p, material_t *m)
     }
 }
 
+static void
+init_active_materials()
+{
+    int i;
+
+    for (i = 0; i < N_DRIVES; i++) {
+	if (active_materials[i].m == NULL) {
+	    active_materials[i].m = find_or_create_material("Default PLA");
+	    active_materials[i].colour = NULL;
+	    active_materials[i].strength = MEDIUM;
+	}
+    }
+}
+
 int
 materials_load(const char *fname)
 {
@@ -144,6 +175,8 @@ materials_load(const char *fname)
 
     yaml_wrapper_delete(p);
 
+    init_active_materials();
+
     return ! had_error;
 }
 
@@ -159,4 +192,29 @@ materials_find_splice(int incoming, int outgoing)
     return find_or_create_splice(&materials[incoming], &materials[outgoing]);
 }
 
+void
+set_active_material(int drive, const char *name, const char *colour, colour_strength_t strength)
+{
+    if (strength == UNKNOWN) {
+	int i;
 
+	for (i = 0; i < N_DEFAULT_COLOUR_STRENGTHS; i++) {
+	    if (strcasecmp(colour, default_colour_strengths[i].colour) == 0) {
+		strength = default_colour_strengths[i].strength;
+		break;
+	    }
+	}
+	if (strength == UNKNOWN) strength = MEDIUM;
+    }
+
+    active_materials[drive].m = find_or_create_material(name);
+    if (active_materials[drive].colour) free(active_materials[drive].colour);
+    active_materials[drive].colour = strdup(colour);
+    active_materials[drive].strength = strength;
+}
+
+active_material_t *
+get_active_material(int drive)
+{
+    return &active_materials[drive];
+}

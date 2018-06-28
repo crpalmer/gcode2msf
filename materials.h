@@ -14,6 +14,16 @@ typedef struct {
     int reverse;
 } material_splice_t;
 
+typedef enum {
+   WEAK, MEDIUM, STRONG, UNKNOWN
+} colour_strength_t;
+
+typedef struct {
+    material_t *m;
+    char *colour;
+    colour_strength_t strength;
+} active_material_t;
+
 int
 materials_load(const char *fname);
 
@@ -22,6 +32,12 @@ materials_find(const char *name);
 
 material_splice_t *const
 materials_find_splice(int incoming, int outgoing);
+
+active_material_t *
+get_active_material(int drive);
+
+void
+set_active_material(int drive, const char *name, const char *colour, colour_strength_t strength);
 
 #endif
 

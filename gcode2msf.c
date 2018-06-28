@@ -14,11 +14,6 @@ static int summary = 0;
 
 static bb_t model_bb;
 
-struct {
-    material_t *m;
-    const char *colour;
-} materials[N_DRIVES];
-
 printer_t *printer;
 
 static void
@@ -107,8 +102,9 @@ produce_msf_colours(FILE *o)
 	if (! first) fprintf(o, ";");
 	first = 0;
 	if (used_tool[i]) {
-	    const char *c = materials[i].colour;
-	    fprintf(o, "%d%s%s%s", materials[i].m->id+1, c ? c : "", c ? " " : "", materials[i].m->type);
+	    active_material_t *m = get_active_material(i);
+	    const char *c = m->colour;
+	    fprintf(o, "%d%s%s%s", m->m->id+1, c ? c : "", c ? " " : "", m->m->type);
 	} else {
 	    fprintf(o, "0");
 	}
@@ -174,14 +170,17 @@ count_or_produce_splice_configurations(FILE *o, int *n_out)
     int n;
 
     for (i = 0; i < N_DRIVES; i++) {
-	if (! used_tool[i] || handled[materials[i].m->id]) continue;
-	produce_msf_splice_configuration(o, materials[i].m->id, materials[i].m->id);
+	active_material_t *m = get_active_material(i);
+	if (! used_tool[i] || handled[m->m->id]) continue;
+	produce_msf_splice_configuration(o, m->m->id, m->m->id);
 	n++;
 	for (j = 0; j < N_DRIVES; j++) {
+	    active_material_t *m2 = get_active_material(j);
+
 	    if (! used_tool[j] || handled[j]) continue;
-	    if (materials[i].m->id == materials[j].m->id) handled[j] = 1;
+	    if (m->m->id == m2->m->id) handled[j] = 1;
 	    else {
-		produce_msf_splice_configuration(o, materials[i].m->id, materials[j].m->id);
+		produce_msf_splice_configuration(o, m->m->id, m2->m->id);
 		n++;
 	    }
 	}
@@ -237,28 +236,15 @@ static void process(const char *fname)
     if (summary) output_summary();
 }
 
-static void
-record_material(int i, const char *colour, const char *name)
-{
-    materials[i].m = materials_find(name);
-    materials[i].colour = colour;
-}
-
 int main(int argc, char **argv)
 {
-    int i;
-
-    for (i = 0; i < N_DRIVES; i++) {
-	record_material(i, NULL, "Default PLA");
-    }
-
     while (argc > 2) {
 	    if (strcmp(argv[1], "--validate") == 0) validate_only = 1;
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) gcode_trace = 1;
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
 	    else if (argc > 3 && argv[1][0] == '-' && isdigit(argv[1][1]) && argv[1][2] == '\0') {
-		record_material(atoi(&argv[1][1])-1, argv[2], argv[3]);
+		set_active_material(atoi(&argv[1][1])-1, argv[3], argv[2], UNKNOWN);
 		argc -= 2;
 		argv += 2;
 	    } else break;

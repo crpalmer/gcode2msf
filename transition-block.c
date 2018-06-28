@@ -5,6 +5,7 @@
 #include <math.h>
 #include <float.h>
 #include "printer.h"
+#include "materials.h"
 #include "transition-block.h"
 
 extern printer_t *printer;
@@ -82,9 +83,27 @@ transition_block_size(double xy[2])
 static double
 transition_length(int from, int to, double total_mm)
 {
+    double mn = printer->min_transition_len;
+    double mx = total_mm < 500 ? printer->early_transition_len : printer->transition_len;
+    active_material_t *in = get_active_material(to);
+    active_material_t *out = get_active_material(from);
+    double factor;
+
     if (from == to) return 17.7;	// TODO: Can I make this smaller unless we are doing a ping?
-    else if (total_mm < 5000) return printer->early_transition_len;
-    else return printer->transition_len;
+
+    if (in->strength == STRONG) {
+	factor = 0;
+    } else if (in->strength == WEAK) {
+	if (out->strength == WEAK) factor = 0.5;
+	else if (out->strength == STRONG) factor = 1;
+	else factor = 0.75;
+    } else {
+	if (out->strength == STRONG) factor = 0.75;
+	else if (out->strength == WEAK) factor = 0.25;
+	else factor = 0.5;
+    }
+
+    return mn + (mx - mn) * factor;
 }
 
 static void
