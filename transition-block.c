@@ -15,6 +15,26 @@ int n_layers;
 transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
 
+static double
+filament_cross_section_area()
+{
+    double radius = printer->filament/2;
+
+    return M_PI*radius*radius;
+}
+
+static double
+filament_length_to_mm3(double len)
+{
+    return filament_cross_section_area() * len;
+}
+
+static double
+filament_mm3_to_length(double mm3)
+{
+    return mm3 / filament_cross_section_area();
+}
+
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
  * post_transition is the amount of filament to consume for the transition after printing everything
  */
@@ -51,7 +71,7 @@ static double
 transition_block_layer_area(int layer)
 {
     layer_t *l = &layers[layer];
-    return M_PI*printer->filament/2.0*printer->filament/2.0*l->mm / l->h;
+    return filament_length_to_mm3(l->mm) / l->h;
 }
 
 static double
@@ -89,7 +109,7 @@ transition_length(int from, int to, double total_mm)
     active_material_t *out = get_active_material(from);
     double factor;
 
-    if (from == to) return 17.7;	// TODO: Can I make this smaller unless we are doing a ping?
+    if (from == to) return 0;
 
     if (in->strength == STRONG) {
 	factor = 0;
@@ -173,6 +193,23 @@ prune_transition_tower()
 }
 
 static void
+add_min_transition_lengths(double area)
+{
+    int i;
+
+    for (i = 0; i < n_layers; i++) {
+	if (layers[i].n_transitions == 1) {
+	    double this_area = area*printer->min_density;
+	    double mm3 = this_area * layers[i].h;
+	    double len = filament_mm3_to_length(mm3);
+	    transition_t *t = &transitions[layers[i].transition0];
+
+	    if (t->mm < len) layers[i].mm = t->mm = len;
+	}
+    }
+}
+
+static void
 find_model_bb_to_tower_height(bb_t *model_bb)
 {
     int i;
@@ -190,5 +227,6 @@ transition_block_create_from_runs(bb_t *model_bb)
 {
     compute_transition_tower();
     prune_transition_tower();
+    add_min_transition_lengths(transition_block_area());
     find_model_bb_to_tower_height(model_bb);
 }
