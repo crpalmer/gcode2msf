@@ -8,25 +8,25 @@ static struct {
     const char *key;
     int offset;
     enum { BOOLEAN, DOUBLE, INT, STRING } type;
-
+    int max_depth;
 } keys[] = {
-    { "name", offsetof(printer_t, name), STRING },
-    { "circular", offsetof(printer_t, circular), BOOLEAN },
-    { "diameter", offsetof(printer_t, diameter), DOUBLE },
-    { "x", offsetof(printer_t, bed_x), DOUBLE },
-    { "y", offsetof(printer_t, bed_y), DOUBLE },
-    { "filamentDiameter", offsetof(printer_t, filament), DOUBLE },
-    { "nozzleDiameter", offsetof(printer_t, nozzle), DOUBLE },
-    { "purgeLength", offsetof(printer_t, transition_len), DOUBLE },
-    { "minPurgeLength", offsetof(printer_t, min_transition_len), DOUBLE },
-    { "initialPurgeLength", offsetof(printer_t, early_transition_len), DOUBLE },
-    { "purgeTarget", offsetof(printer_t, transition_target), DOUBLE },
-    { "printSpeed", offsetof(printer_t, print_speed), DOUBLE },
-    { "minDensity", offsetof(printer_t, min_density), DOUBLE },
-    { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed), DOUBLE },
-    { "loadingOffset", offsetof(printer_t, loading_offset), INT },
-    { "printValue", offsetof(printer_t, pv), DOUBLE },
-    { "calibrationGCodeLength", offsetof(printer_t, calibration_len), DOUBLE },
+    { "name", offsetof(printer_t, name), STRING, -1 },
+    { "circular", offsetof(printer_t, circular), BOOLEAN, -1 },
+    { "diameter", offsetof(printer_t, diameter), DOUBLE, -1 },
+    { "x", offsetof(printer_t, bed_x), DOUBLE, 2 },
+    { "y", offsetof(printer_t, bed_y), DOUBLE, 2 },
+    { "filamentDiameter", offsetof(printer_t, filament), DOUBLE, -1 },
+    { "nozzleDiameter", offsetof(printer_t, nozzle), DOUBLE, -1 },
+    { "purgeLength", offsetof(printer_t, transition_len), DOUBLE, -1 },
+    { "minPurgeLength", offsetof(printer_t, min_transition_len), DOUBLE, -1 },
+    { "initialPurgeLength", offsetof(printer_t, early_transition_len), DOUBLE, -1 },
+    { "purgeTarget", offsetof(printer_t, transition_target), DOUBLE, -1 },
+    { "printSpeed", offsetof(printer_t, print_speed), DOUBLE, -1 },
+    { "minDensity", offsetof(printer_t, min_density), DOUBLE, -1 },
+    { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed), DOUBLE, -1 },
+    { "loadingOffset", offsetof(printer_t, loading_offset), INT, -1 },
+    { "printValue", offsetof(printer_t, pv), DOUBLE, -1 },
+    { "calibrationGCodeLength", offsetof(printer_t, calibration_len), DOUBLE, -1 },
 };
 
 #define N_KEYS (sizeof(keys) / sizeof(keys[0]))
@@ -50,7 +50,7 @@ printer_load(const char *fname)
 process_event:
 	if (event.type == YAML_MAPPING_START_EVENT) depth++;
 	else if (event.type == YAML_MAPPING_END_EVENT) depth--;
-	else if (event.type == YAML_SCALAR_EVENT && depth < 3) {
+	else if (event.type == YAML_SCALAR_EVENT) {
 	    const char *key = event.data.scalar.value;
 	    const char *value;
 
@@ -74,20 +74,22 @@ process_event:
 		    double *d = (double *) p;
 		    int *i = (int *) p;
 
-		    switch(keys[ki].type) {
-		    case BOOLEAN:
-			*i = strcmp(value, "true") == 0;
-			break;
-		    case DOUBLE:
-			*d = atof(value);
-			break;
-		    case INT:
-			*i = atoi(value);
-			break;
-		    case STRING:
-			if (*s) free(*s);
-			*s = strdup(value);
-			break;
+		    if (keys[ki].max_depth  < 0 || depth <= keys[ki].max_depth) {
+			switch(keys[ki].type) {
+			case BOOLEAN:
+			    *i = strcmp(value, "true") == 0;
+			    break;
+			case DOUBLE:
+			    *d = atof(value);
+			    break;
+			case INT:
+			    *i = atoi(value);
+			    break;
+			case STRING:
+			    if (*s) free(*s);
+			    *s = strdup(value);
+			    break;
+			}
 		    }
 		}
 	    }
