@@ -6,6 +6,7 @@
 #include <float.h>
 #include <assert.h>
 #include "gcode.h"
+#include "printer.h"
 #include "transition-block.h"
 
 typedef struct {
@@ -33,6 +34,8 @@ typedef struct {
     long pos;
 } token_t;
 
+extern printer_t *printer;
+
 static FILE *f, *o;
 
 static char buf[1024*1024];
@@ -54,6 +57,9 @@ static int started = 0;
 run_t runs[MAX_RUNS];
 int n_runs = 0;
 int used_tool[N_DRIVES] = { 0, };
+
+splice_t splices[MAX_RUNS];
+int n_splices = 0;
 
 static int
 find_arg(const char *buf, char arg, double *val)
@@ -273,6 +279,23 @@ preprocess()
 }
 
 static void
+add_splice(int drive, double mm)
+{
+    splices[n_splices].drive = drive;
+    splices[n_splices].mm = mm;
+    n_splices++;
+}
+
+static void
+generate_transition(transition_t *t, double *total_e)
+{
+    fprintf(o, "; Transition: %d->%d with %f mm\n", t->from, t->to, t->mm);
+    (*total_e) += t->mm * printer->transition_target;
+    if (t->from != t->to) add_splice(t->from, *total_e);
+    (*total_e) += t->mm * (1 - printer->transition_target);	// this should be actual extruded when I really print the block
+}
+
+static void
 produce_gcode()
 {
     int l = 0;
@@ -281,6 +304,7 @@ produce_gcode()
     int seen_tool = 0;
     int tool = 0;
     int started = 0;
+    double total_e;
 
     last_e = last_x = last_y = last_z = 0;
 
@@ -298,13 +322,13 @@ produce_gcode()
 	    if (t < n_transitions && started && token.x.move.e != last_e && may_need_transition) {
 		last_e_z = token.x.move.z;
 		last_e_tool = tool;
-		fprintf(o, "; Transition: %d->%d with %f mm at z=%f\n", transitions[t].from, transitions[t].to, transitions[t].mm, token.x.move.z);
-fflush(o);
+		generate_transition(&transitions[t], &total_e);
 		assert(token.x.move.z == layers[l].z);
 		t++;
 		if (layers[l].transition0 + layers[l].n_transitions == t) l++;
 		assert(layers[l].transition0 <= t && t < layers[l].transition0 + layers[l].n_transitions);
 	    }
+	    total_e += token.x.move.e - last_e;
 	    last_e = token.x.move.e;
 	    last_x = token.x.move.x;
 	    last_y = token.x.move.y;
@@ -334,6 +358,7 @@ fflush(o);
 	    fprintf(o, "; Switching to tool %d\n", tool);
 	    break;
 	case DONE:
+	    add_splice(tool, total_e);
 	    return;
 	}
     }
@@ -359,4 +384,5 @@ void gcode_to_msf_gcode(const char *output_fname)
     produce_gcode();
     fclose(o);
     o = NULL;
+printf("Made %d splices\n", n_splices);
 }

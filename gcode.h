@@ -14,9 +14,17 @@ typedef struct {
     int    pre_transition, post_transition;
 } run_t;
 
+typedef struct {
+    int drive;
+    double mm;
+} splice_t;
+
 extern run_t runs[MAX_RUNS];
 extern int n_runs;
 extern int used_tool[N_DRIVES];
+
+extern splice_t splices[MAX_RUNS];
+extern int n_splices;
 
 extern int extrusions;
 extern int gcode_trace;

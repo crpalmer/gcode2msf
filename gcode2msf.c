@@ -113,38 +113,14 @@ produce_msf_colours(FILE *o)
 }
 
 static void
-count_or_produce_splices(FILE *o, int *n_out)
-{
-    int i, j, n = 0;
-    char buf[20];
-    double mm = 0;
-
-    for (i = 0; i < n_runs; i = j) {
-	for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
-	    mm += get_pre_transition_mm(j);
-	    mm += runs[j].e;
-	    mm += get_post_transition_mm(j);
-	}
-	if (o) fprintf(o, "(%02x,%s)\n", runs[i].t, float_to_hex(mm, buf));
-	n++;
-    }
-
-    if (n_out) *n_out = n;
-}
-
-static void
 produce_msf_splices(FILE *o)
 {
-    count_or_produce_splices(o, NULL);
-}
+    int i;
+    char buf[20];
 
-static int
-msf_n_splices()
-{
-    int n;
-
-    count_or_produce_splices(NULL, &n);
-    return n;
+    for (i = 0; i < n_splices; i++) {
+	 fprintf(o, "(%02x,%s)\n", splices[i].drive, float_to_hex(splices[i].mm, buf));
+    }
 }
 
 static void
@@ -206,14 +182,19 @@ msf_splice_configurations_n()
 static void
 produce_msf(const char *fname)
 {
-    FILE *o = stdout;
+    FILE *o;
     char buf[20];
+
+    if ((o = fopen(fname, "w")) == NULL) {
+	perror(fname);
+	return;
+    }
 
     fprintf(o, "MSF1.4\n");
     produce_msf_colours(o);
     fprintf(o, "ppm:%s\n", float_to_hex(printer->pv / printer->calibration_len, buf));
     fprintf(o, "lo:%x\n", printer->loading_offset);
-    fprintf(o, "ns:%x\n", msf_n_splices());
+    fprintf(o, "ns:%x\n", n_splices);
     fprintf(o, "np:0\n");
     fprintf(o, "nh:%04x\n", msf_splice_configurations_n());
     // TODO na:
@@ -226,8 +207,8 @@ static void process(const char *fname)
 {
     gcode_to_runs(fname);
     transition_block_create_from_runs(&model_bb);
-    produce_msf("/tnp/msf");
     gcode_to_msf_gcode("/tmp/gcode");
+    produce_msf("/tmp/msf");
     if (summary) output_summary();
 }
 

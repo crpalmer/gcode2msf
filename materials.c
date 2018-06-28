@@ -12,8 +12,8 @@
 
 static material_t materials[MAX_MATERIALS];
 static int n_materials;
-static material_splice_t splices[MAX_SPLICES];
-static int n_splices;
+static material_splice_t material_splices[MAX_SPLICES];
+static int n_material_splices;
 
 static active_material_t active_materials[N_DRIVES];
 
@@ -54,15 +54,15 @@ find_or_create_splice(material_t *incoming, material_t *outgoing)
 {
      int i;
 
-    for (i = 0; i < n_splices; i++) {
-	if (splices[i].incoming == incoming->id && splices[i].outgoing == outgoing->id) return &splices[i];
+    for (i = 0; i < n_material_splices; i++) {
+	if (material_splices[i].incoming == incoming->id && material_splices[i].outgoing == outgoing->id) return &material_splices[i];
     }
 
-    splices[n_splices].incoming = incoming->id;
-    splices[n_splices].outgoing = outgoing->id;
-    n_splices++;
+    material_splices[n_material_splices].incoming = incoming->id;
+    material_splices[n_material_splices].outgoing = outgoing->id;
+    n_material_splices++;
 
-    return &splices[n_splices-1];
+    return &material_splices[n_material_splices-1];
 }
 
 static void
