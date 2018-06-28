@@ -1,6 +1,12 @@
 all:	gcode2msf msf2text
 
-GCODE2MSF_OBJS = bb.o gcode.o gcode2msf.o materials.o yaml-wrapper.o
+GCODE2MSF_OBJS = \
+	bb.o \
+	gcode.o \
+	gcode2msf.o \
+	materials.o \
+	printer.o \
+	yaml-wrapper.o
 
 CFLAGS=-g
 
@@ -10,8 +16,9 @@ gcode2msf: $(GCODE2MSF_OBJS)
 bb.o: bb.h
 gcode.o: gcode.h
 gcode.h: bb.h
-gcode2msf.o: bb.h gcode.h materials.h
-materials.o: materials.h
+gcode2msf.o: bb.h gcode.h materials.h printer.h
+materials.o: materials.h yaml-wrapper.h
+printer.o: printer.h yaml-wrapper.h
 
 msf2text: msf2text.c
 	$(CC) msf2text.c -o msf2text -lm

@@ -7,6 +7,7 @@
 #include "bb.h"
 #include "gcode.h"
 #include "materials.h"
+#include "printer.h"
 
 typedef struct {
     bb_t   bb;
@@ -35,28 +36,7 @@ struct {
     const char *colour;
 } materials[N_DRIVES];
 
-typedef struct {
-    const char *name;
-    unsigned lv;
-    double ppm;
-    double nozzle;
-    double filament;
-    double radius;
-    double size[2];
-} printer_t;
-
-static printer_t printers[] = {
-    { "TLM", 25821, 30.099659, 0.4, 1.75, 150, { NAN, NAN} },
-    { "Taz6", 25821, 30.099659, 0.4, 1.75, NAN, { 280, 280} }
-};
-
-static printer_t *printer = &printers[1];
-
-struct {
-    double target_pct;
-    double min_density;
-    double transition_mm;
-} t_config = { 0.2, 0.05, 100 };
+static printer_t *printer;
 
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
  * post_transition is the amount of filament to consume for the transition after printing everything
@@ -73,7 +53,7 @@ static double
 get_pre_transition_mm(int j)
 {
     transition_t *t = get_pre_transition(j);
-    return t ? t_config.target_pct * t->mm : 0;
+    return t ? printer->transition_target * t->mm : 0;
 }
 
 static transition_t *
@@ -87,7 +67,7 @@ static double
 get_post_transition_mm(int j)
 {
     transition_t *t = get_post_transition(j);
-    return t ? (1-t_config.target_pct) * t->mm : 0;
+    return t ? (1-printer->transition_target) * t->mm : 0;
 }
 
 static double
@@ -169,14 +149,15 @@ output_summary()
 }
 
 static double
-transition_length(int from, int to)
+transition_length(int from, int to, double total_mm)
 {
     if (from == to) return 17.7;	// TODO: Can I make this smaller unless we are doing a ping?
-    else return t_config.transition_mm;
+    else if (total_mm < 5000) return printer->early_transition_len;
+    else return printer->transition_len;
 }
 
 static void
-add_transition(int from, int to, double z, run_t *run, run_t *pre_run)
+add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *total_mm)
 {
     layer_t *layer;
 
@@ -195,26 +176,30 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run)
     run->pre_transition = n_transitions;
     transitions[n_transitions].from = from;
     transitions[n_transitions].to = to;
-    transitions[n_transitions].mm = transition_length(from, to);
+    transitions[n_transitions].mm = transition_length(from, to, *total_mm);
     n_transitions++;
 
     layer = &layers[n_layers-1];
     layer->n_transitions++;
     layer->mm += transitions[n_transitions-1].mm;
     bb_add_bb(&layer->bb, &run->bb);
+
+    *total_mm += transitions[n_transitions].mm;
 }
 
 static void
 compute_transition_tower()
 {
     int i;
+    double total_mm = 0;
 
     for (i = 1; i < n_runs; i++) {
 	if (runs[i-1].t != runs[i].t) {
-	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1]);
+	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm);
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
-	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1]);
+	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm);
 	}
+	total_mm += runs[i].e;
     }
 }
 
@@ -395,8 +380,8 @@ produce_msf(const char *fname)
 
     fprintf(o, "MSF1.4\n");
     produce_msf_colours(o);
-    fprintf(o, "ppm:%s\n", float_to_hex(printer->ppm, buf));
-    fprintf(o, "lo:%x\n", printer->lv);
+    fprintf(o, "ppm:%s\n", float_to_hex(printer->pv / printer->calibration_len, buf));
+    fprintf(o, "lo:%x\n", printer->loading_offset);
     fprintf(o, "ns:%x\n", msf_n_splices());
     fprintf(o, "np:0\n");
     fprintf(o, "nh:%04x\n", msf_splice_configurations_n());
@@ -437,7 +422,7 @@ int main(int argc, char **argv)
 	record_material(i, NULL, "Default PLA");
     }
 
-    while (argc > 1) {
+    while (argc > 2) {
 	    if (strcmp(argv[1], "--validate") == 0) validate_only = 1;
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) gcode_trace = 1;
@@ -456,10 +441,15 @@ int main(int argc, char **argv)
 	exit(1);
     }
 
-    if (argc > 2) {
-	fprintf(stderr, "May only process 1 file per run!\n");
+    if (argc != 3) {
+	fprintf(stderr, "usage: [--validate | --summary | --trace | --extrusions | --[1-4] colour material] printer.yaml input.yaml\n");
 	exit(0);
     }
 
-    process(argv[1]);
+    if ((printer = printer_load(argv[1])) == NULL) {
+	perror(argv[1]);
+    }
+
+    fprintf(stderr, "Using printer: %s\n", printer->name);
+    process(argv[2]);
 }
