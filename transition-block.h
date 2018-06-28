@@ -16,6 +16,7 @@ typedef struct {
 typedef struct {
     int from, to;
     double mm;
+    int ping;
 } transition_t;
 
 

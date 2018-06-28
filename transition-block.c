@@ -147,6 +147,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     transitions[n_transitions].from = from;
     transitions[n_transitions].to = to;
     transitions[n_transitions].mm = transition_length(from, to, *total_mm);
+    transitions[n_transitions].ping = 0;
     n_transitions++;
 
     layer = &layers[n_layers-1];
@@ -157,15 +158,22 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     *total_mm += transitions[n_transitions].mm;
 }
 
+#define PING_THRESHOLD 500
+
 static void
 compute_transition_tower()
 {
     int i;
     double total_mm = 0;
+    double last_ping_at = 0;
 
     for (i = 1; i < n_runs; i++) {
 	if (runs[i-1].t != runs[i].t) {
 	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm);
+	    if (total_mm - last_ping_at > PING_THRESHOLD) {
+		last_ping_at = total_mm;
+		transitions[n_transitions-1].ping = 1;
+	    }
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
 	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm);
 	}
