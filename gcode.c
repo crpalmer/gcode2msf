@@ -4,7 +4,9 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <assert.h>
 #include "gcode.h"
+#include "transition-block.h"
 
 typedef struct {
     enum {
@@ -15,6 +17,7 @@ typedef struct {
 	TOOL,
 	PING,
 	START,
+	OTHER,
 	DONE
     } t;
     union {
@@ -30,7 +33,7 @@ typedef struct {
     long pos;
 } token_t;
 
-static FILE *f;
+static FILE *f, *o;
 
 static char buf[1024*1024];
 
@@ -112,6 +115,8 @@ get_next_token_wrapped()
 	    t.x.tool = atoi(&buf[1]);
 	    return t;
 	}
+	t.t = OTHER;
+	return t;
     }
 
     t.t = DONE;
@@ -132,6 +137,7 @@ get_next_token()
 	case SET_E: printf("SET_E %f\n", t.x.e); break;
 	case START: printf("START\n"); break;
 	case TOOL: printf("TOOL %d\n", t.x.tool); break;
+	case OTHER: break;
 	default: printf("*** UNKNOWN TOKEN ****\n");
         }
     }
@@ -260,6 +266,75 @@ preprocess()
 	    break;
 	case DONE:
 	    return;
+	case OTHER:
+	    break;
+	}
+    }
+}
+
+static void
+produce_gcode()
+{
+    int l = 0;
+    int t = 0;
+    double last_e_z = 0, last_e_tool;
+    int seen_tool = 0;
+    int tool = 0;
+    int started = 0;
+
+    last_e = last_x = last_y = last_z = 0;
+
+    rewind(f);
+    while (1) {
+	token_t token = get_next_token();
+
+	switch(token.t) {
+	case MOVE: {
+	    int may_need_transition = 0;
+
+	    if (tool != last_e_tool) may_need_transition = 1;
+	    if (token.x.move.z != last_e_z && layers[l].n_transitions == 1 && transitions[t].from == transitions[t].to) may_need_transition = 1;
+
+	    if (t < n_transitions && started && token.x.move.e != last_e && may_need_transition) {
+		last_e_z = token.x.move.z;
+		last_e_tool = tool;
+		fprintf(o, "; Transition: %d->%d with %f mm at z=%f\n", transitions[t].from, transitions[t].to, transitions[t].mm, token.x.move.z);
+fflush(o);
+		assert(token.x.move.z == layers[l].z);
+		t++;
+		if (layers[l].transition0 + layers[l].n_transitions == t) l++;
+		assert(layers[l].transition0 <= t && t < layers[l].transition0 + layers[l].n_transitions);
+	    }
+	    last_e = token.x.move.e;
+	    last_x = token.x.move.x;
+	    last_y = token.x.move.y;
+	    last_z = token.x.move.z;
+	    fprintf(o, "%s", buf);
+	    break;
+	}
+	case START:
+	    started = 1;
+	    break;
+	case START_TOWER:
+	case END_TOWER:
+	case PING:
+	case OTHER:
+	    fprintf(o, "%s", buf);
+	    break;
+	case SET_E:
+	    last_e = 0;
+	    fprintf(o, "%s", buf);
+	    break;
+	case TOOL:
+	    if (! seen_tool) {
+		seen_tool = 1;
+		last_e_tool = token.x.tool;
+	    }
+	    tool = token.x.tool;
+	    fprintf(o, "; Switching to tool %d\n", tool);
+	    break;
+	case DONE:
+	    return;
 	}
     }
 }
@@ -272,5 +347,16 @@ void gcode_to_runs(const char *fname)
     }
 
     preprocess();
-    fclose(f);
+}
+
+void gcode_to_msf_gcode(const char *output_fname)
+{
+    if ((o = fopen(output_fname, "w")) == NULL) {
+	perror(output_fname);
+	return;
+    }
+
+    produce_gcode();
+    fclose(o);
+    o = NULL;
 }

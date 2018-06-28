@@ -222,17 +222,12 @@ produce_msf(const char *fname)
     produce_msf_splice_configurations(o);
 }
 
-static void
-produce_gcode(const char *gcode)
-{
-}
-
 static void process(const char *fname)
 {
     gcode_to_runs(fname);
     transition_block_create_from_runs(&model_bb);
-    produce_msf(fname);
-    produce_gcode(fname);
+    produce_msf("/tnp/msf");
+    gcode_to_msf_gcode("/tmp/gcode");
     if (summary) output_summary();
 }
 
