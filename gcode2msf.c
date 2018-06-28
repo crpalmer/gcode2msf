@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include "materials.h"
 
 #define MAX_RUNS	100000
 #define N_DRIVES	4
@@ -73,6 +74,7 @@ static bb_t bb;
 static int tool = 0;
 static int seen_tool = 0;
 static int used_tool[N_DRIVES] = { 0, };
+static int n_used_tools = 0;
 static double tower_z = -1;
 static int in_tower = 0;
 static int seen_ping = 0;
@@ -88,25 +90,9 @@ static int n_transitions = 0;
 static bb_t model_bb;
 
 struct {
-    int  id;
-    const char *name;
-} materials[N_DRIVES] = {
-    { 1, "Orange PLA" },
-    { -1, NULL },
-    { -1, NULL },
-    { 2, "White Soluble" }
-};
-
-#define N_SPLICING (N_DRIVES*N_DRIVES)
-struct {
-   int from, to;
-   double heat, compressing;
-   int reverse;
-} splicing[N_SPLICING] = {
-   { 1, 1, 9, 2, 0 },
-   { 1, 2, 6, 4, 0 },
-   { 2, 1, 6, 4, 1 },
-};
+    material_t *m;
+    const char *colour;
+} materials[N_DRIVES];
 
 typedef struct {
     const char *name;
@@ -281,7 +267,10 @@ static void
 add_run()
 {
     if (acc_e != 0) {
-	used_tool[tool] = 1;
+	if (! used_tool[tool]) {
+	    used_tool[tool] = 1;
+	    n_used_tools++;
+	}
 
 	runs[n_runs].bb = bb;
 	runs[n_runs].z = last_e_z;
@@ -594,10 +583,13 @@ produce_msf_colours(FILE *o)
 
     fprintf(o, "cu:");
     for (i = 0; i < N_DRIVES; i++) {
+	if (! first) fprintf(o, ";");
+	first = 0;
 	if (used_tool[i]) {
-	    if (! first) fprintf(o, ";");
-	    first = 0;
-	    fprintf(o, "%d%s", materials[i].id, materials[i].name);
+	    const char *c = materials[i].colour;
+	    fprintf(o, "%d%s%s%s", materials[i].m->id+1, c ? c : "", c ? " " : "", materials[i].m->type);
+	} else {
+	    fprintf(o, "0");
 	}
     }
     fprintf(o, "\n");
@@ -639,6 +631,59 @@ msf_n_splices()
 }
 
 static void
+produce_msf_splice_configuration(FILE *o, int id1, int id2)
+{
+    int dir;
+    char buf1[20], buf2[20];
+
+    if (! o) return;
+    for (dir = 0; dir < (id1 == id2 ? 1 : 2); dir++) {
+	int incoming = dir ? id1 : id2;
+	int outgoing = dir ? id2 : id1;
+	material_splice_t *splice = materials_find_splice(incoming, outgoing);
+	fprintf(o, "(%d%d,%s,%s,%d)\n", incoming+1, outgoing+1, float_to_hex(splice->heat, buf1), float_to_hex(splice->compression, buf2), splice->reverse);
+    }
+}
+
+static void
+count_or_produce_splice_configurations(FILE *o, int *n_out)
+{
+    int i, j;
+    int handled[N_DRIVES] = { 0, };
+    int n;
+
+    for (i = 0; i < N_DRIVES; i++) {
+	if (! used_tool[i] || handled[materials[i].m->id]) continue;
+	produce_msf_splice_configuration(o, materials[i].m->id, materials[i].m->id);
+	n++;
+	for (j = 0; j < N_DRIVES; j++) {
+	    if (! used_tool[j] || handled[j]) continue;
+	    if (materials[i].m->id == materials[j].m->id) handled[j] = 1;
+	    else {
+		produce_msf_splice_configuration(o, materials[i].m->id, materials[j].m->id);
+		n++;
+	    }
+	}
+    }
+    if (n_out) *n_out = n;
+}
+
+static void
+produce_msf_splice_configurations(FILE *o)
+{
+    count_or_produce_splice_configurations(o, NULL);
+}
+
+static int
+msf_splice_configurations_n()
+{
+    int n;
+
+    count_or_produce_splice_configurations(NULL, &n);
+    return n;
+}
+
+static void
 produce_msf(const char *fname)
 {
     FILE *o = stdout;
@@ -650,11 +695,11 @@ produce_msf(const char *fname)
     fprintf(o, "lo:%x\n", printer->lv);
     fprintf(o, "ns:%x\n", msf_n_splices());
     fprintf(o, "np:0\n");
-    fprintf(o, "nh:0\n");
+    fprintf(o, "nh:%04x\n", msf_splice_configurations_n());
     // TODO na:
     produce_msf_splices(o);
     // TODO pings
-    // produce_msf_splice_configuration(o);
+    produce_msf_splice_configurations(o);
 }
 
 static void
@@ -681,18 +726,38 @@ static void process(const char *fname)
     if (summary) output_summary();
 }
 
+static void
+record_material(int i, const char *colour, const char *name)
+{
+    materials[i].m = materials_find(name);
+    materials[i].colour = colour;
+}
+
 int main(int argc, char **argv)
 {
     int i;
+
+    for (i = 0; i < N_DRIVES; i++) {
+	record_material(i, NULL, "Default PLA");
+    }
 
     while (argc > 1) {
 	    if (strcmp(argv[1], "--validate") == 0) validate_only = 1;
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) trace = 1;
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
-	    else break;
+	    else if (argc > 3 && argv[1][0] == '-' && isdigit(argv[1][1]) && argv[1][2] == '\0') {
+		record_material(atoi(&argv[1][1])-1, argv[2], argv[3]);
+		argc -= 2;
+		argv += 2;
+	    } else break;
 	    argc--;
 	    argv++;
+    }
+
+    if (! materials_load("materials.yml")) {
+	perror("materials.yaml");
+	exit(1);
     }
 
     if (argc > 2) {
