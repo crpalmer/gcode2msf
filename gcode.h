@@ -23,5 +23,6 @@ extern int gcode_trace;
 extern int validate_only;
 
 void gcode_to_runs(const char *fname);
+void gcode_to_msf_gcode(const char *fname, const char *output_fname);
 
 #endif
