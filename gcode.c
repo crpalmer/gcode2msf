@@ -65,6 +65,34 @@ int n_splices = 0;
 ping_t pings[MAX_RUNS];
 int n_pings = 0;
 
+static double retract_mm = 0;
+static double retract_mm_per_min = 0;
+static double z_hop = 0;
+
+static double mm_per_sec_to_per_min(double mm_per_sec)
+{
+    return mm_per_sec * 60;
+}
+
+struct {
+    const char *key;
+    double *value;
+    double (*normalize)(double);
+} gcode_params[] = {
+    /* KISSlicer */
+    { "; destring_length = ", &retract_mm, NULL },
+    { "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
+    { "; Z_lift_mm = ", &z_hop, NULL },
+    /* S3D */
+    { ";   extruderRetractionDistance,", &retract_mm, NULL },
+    { ";   extruderRetractionZLift,", &z_hop, NULL },
+    { ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
+};
+
+#define N_GCODE_PARAMS (sizeof(gcode_params) / sizeof(gcode_params[0]))
+
+#define STRNCMP(a, b) strncmp(a, b, strlen(b))
+
 static int
 find_arg(const char *buf, char arg, double *val)
 {
@@ -80,7 +108,22 @@ find_arg(const char *buf, char arg, double *val)
     }
 }
 
-#define STRNCMP(a, b) strncmp(a, b, strlen(b))
+static void
+check_for_gcode_params()
+{
+    int i;
+
+    if (buf[0] != ';') return;
+
+    for (i = 0; i < N_GCODE_PARAMS; i++) {
+	if (STRNCMP(buf, gcode_params[i].key) == 0) {
+	    double v = atof(buf + strlen(gcode_params[i].key));
+	    if (gcode_params[i].normalize) v = gcode_params[i].normalize(v);
+	    *gcode_params[i].value = v;
+	    break;
+	}
+    }
+}
 
 static token_t
 get_next_token_wrapped()
@@ -125,6 +168,7 @@ get_next_token_wrapped()
 	    t.x.tool = atoi(&buf[1]);
 	    return t;
 	}
+	check_for_gcode_params();
 	t.t = OTHER;
 	return t;
     }
@@ -394,5 +438,4 @@ void gcode_to_msf_gcode(const char *output_fname)
     produce_gcode();
     fclose(o);
     o = NULL;
-printf("Made %d splices\n", n_splices);
 }
