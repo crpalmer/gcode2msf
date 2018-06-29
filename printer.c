@@ -15,6 +15,7 @@ static struct {
     { "diameter", offsetof(printer_t, diameter), DOUBLE, -1 },
     { "x", offsetof(printer_t, bed_x), DOUBLE, 2 },
     { "y", offsetof(printer_t, bed_y), DOUBLE, 2 },
+    { "bowdenTube", offsetof(printer_t, bowden_len), DOUBLE, -1 },
     { "filamentDiameter", offsetof(printer_t, filament), DOUBLE, -1 },
     { "nozzleDiameter", offsetof(printer_t, nozzle), DOUBLE, -1 },
     { "purgeLength", offsetof(printer_t, transition_len), DOUBLE, -1 },

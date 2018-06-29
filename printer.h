@@ -6,6 +6,7 @@ typedef struct {
     int    circular;
     double diameter;
     double bed_x, bed_y;
+    double bowden_len;
     double filament;
     double nozzle;
     double transition_len;

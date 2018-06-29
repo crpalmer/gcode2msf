@@ -9,6 +9,8 @@
 #include "printer.h"
 #include "transition-block.h"
 
+#define EXTRA_FILAMENT	75
+
 typedef struct {
     enum {
 	MOVE,
@@ -358,6 +360,7 @@ produce_gcode()
 	    fprintf(o, "; Switching to tool %d\n", tool);
 	    break;
 	case DONE:
+	    total_e += printer->bowden_len > 0 ? printer->bowden_len : EXTRA_FILAMENT;
 	    add_splice(tool, total_e);
 	    return;
 	}
