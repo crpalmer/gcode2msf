@@ -155,10 +155,10 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     layer->mm += transitions[n_transitions-1].mm;
     bb_add_bb(&layer->bb, &run->bb);
 
-    *total_mm += transitions[n_transitions].mm;
+    (*total_mm) += transitions[n_transitions-1].mm;
 }
 
-#define PING_THRESHOLD 500
+#define PING_THRESHOLD 425
 
 static void
 compute_transition_tower()
@@ -168,15 +168,20 @@ compute_transition_tower()
     double last_ping_at = 0;
 
     for (i = 1; i < n_runs; i++) {
+	double ping_delta;
+
 	if (runs[i-1].t != runs[i].t) {
 	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm);
-	    if (total_mm - last_ping_at > PING_THRESHOLD) {
-		last_ping_at = total_mm;
-		transitions[n_transitions-1].ping = 1;
-	    }
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
 	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm);
 	}
+
+	ping_delta = total_mm - last_ping_at;
+        if (ping_delta > PING_THRESHOLD || (i+1 < n_runs && ping_delta+runs[i+1].e > PING_THRESHOLD*2)) {
+	    last_ping_at = total_mm;
+	    transitions[n_transitions-1].ping = 1;
+	}
+
 	total_mm += runs[i].e;
     }
 }
@@ -218,6 +223,22 @@ add_min_transition_lengths(double area)
 }
 
 static void
+reduce_pings()
+{
+    int i, j;
+
+    for (i = 0; i < n_transitions; i++) {
+	if (transitions[i].ping) {
+	    transitions[i].ping = 0;
+	    for (j = i; j < n_transitions && transitions[j].from == transitions[j].to; j++) {
+		transitions[j].ping = 0;
+	    }
+	    transitions[j-1].ping = 1;
+	}
+    }
+}
+
+static void
 find_model_bb_to_tower_height(bb_t *model_bb)
 {
     int i;
@@ -236,5 +257,6 @@ transition_block_create_from_runs(bb_t *model_bb)
     compute_transition_tower();
     prune_transition_tower();
     add_min_transition_lengths(transition_block_area());
+    reduce_pings();
     find_model_bb_to_tower_height(model_bb);
 }

@@ -124,6 +124,17 @@ produce_msf_splices(FILE *o)
 }
 
 static void
+produce_msf_pings(FILE *o)
+{
+    int i;
+    char buf[20];
+
+    for (i = 0; i < n_pings; i++) {
+	fprintf(o, "(64,%s)\n", float_to_hex(pings[i].mm, buf));
+    }
+}
+
+static void
 produce_msf_splice_configuration(FILE *o, int id1, int id2)
 {
     int dir;
@@ -195,11 +206,11 @@ produce_msf(const char *fname)
     fprintf(o, "ppm:%s\n", float_to_hex(printer->pv / printer->calibration_len, buf));
     fprintf(o, "lo:%x\n", printer->loading_offset);
     fprintf(o, "ns:%x\n", n_splices);
-    fprintf(o, "np:0\n");
+    fprintf(o, "np:%04x\n", n_pings);
     fprintf(o, "nh:%04x\n", msf_splice_configurations_n());
     // TODO na:
     produce_msf_splices(o);
-    // TODO pings
+    produce_msf_pings(o);
     produce_msf_splice_configurations(o);
 }
 

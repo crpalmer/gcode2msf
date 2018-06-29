@@ -62,6 +62,8 @@ int used_tool[N_DRIVES] = { 0, };
 
 splice_t splices[MAX_RUNS];
 int n_splices = 0;
+ping_t pings[MAX_RUNS];
+int n_pings = 0;
 
 static int
 find_arg(const char *buf, char arg, double *val)
@@ -294,6 +296,11 @@ generate_transition(transition_t *t, double *total_e)
     fprintf(o, "; Transition: %d->%d with %f mm\n", t->from, t->to, t->mm);
     (*total_e) += t->mm * printer->transition_target;
     if (t->from != t->to) add_splice(t->from, *total_e);
+    if (t->ping) {
+	// TODO: actually report the correct extrusion for the ping
+	pings[n_pings].mm = *total_e;
+	n_pings++;
+    }
     (*total_e) += t->mm * (1 - printer->transition_target);	// this should be actual extruded when I really print the block
 }
 

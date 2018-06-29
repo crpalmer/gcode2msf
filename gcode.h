@@ -19,12 +19,18 @@ typedef struct {
     double mm;
 } splice_t;
 
+typedef struct {
+    double mm;
+} ping_t;
+
 extern run_t runs[MAX_RUNS];
 extern int n_runs;
 extern int used_tool[N_DRIVES];
 
 extern splice_t splices[MAX_RUNS];
 extern int n_splices;
+extern ping_t pings[MAX_RUNS];
+extern int n_pings;
 
 extern int extrusions;
 extern int gcode_trace;
