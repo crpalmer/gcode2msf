@@ -12,8 +12,6 @@
 
 static int summary = 0;
 
-static bb_t model_bb;
-
 printer_t *printer;
 
 static void
@@ -54,7 +52,7 @@ output_summary()
     printf("\n");
     double t_xy[2];
     transition_block_size(t_xy);
-    printf("Transition block: area %f dimensions %fx%f model_bb=(%f,%f),(%f,%f)\n", t_xy[0] * t_xy[1], t_xy[0], t_xy[1], BB_PRINTF_ARGS(&model_bb));
+    printf("Transition block: area %f transition_block=(%f,%f)x(%f,%f)\n", t_xy[0] * t_xy[1], transition_block.x, transition_block.y, transition_block.w, transition_block.h);
     printf("----------------\n");
     for (i = 0; i < n_layers; i++) {
 	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d bb=(%f,%f),(%f,%f)\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, BB_PRINTF_ARGS(&layers[i].bb));
@@ -217,7 +215,7 @@ produce_msf(const char *fname)
 static void process(const char *fname)
 {
     gcode_to_runs(fname);
-    transition_block_create_from_runs(&model_bb);
+    transition_block_create_from_runs();
     gcode_to_msf_gcode("/tmp/gcode");
     produce_msf("/tmp/msf");
     if (summary) output_summary();

@@ -1,7 +1,6 @@
 #ifndef __TRANSITION_BLOCK_H__
 #define __TRANSITION_BLOCK_H__
 
-#include "bb.h"
 #include "gcode.h"
 
 typedef struct {
@@ -19,15 +18,19 @@ typedef struct {
     int ping;
 } transition_t;
 
+typedef struct {
+    double x, y, w, h;
+} transition_block_t;
 
 extern layer_t layers[MAX_RUNS];
 extern int n_layers;
 extern transition_t transitions[MAX_RUNS];
 extern int n_transitions;
+extern transition_block_t transition_block;
 
 void transition_block_size(double xy[2]);
 
-void transition_block_create_from_runs(bb_t *model_bb);
+void transition_block_create_from_runs();
 
 /* temporarily export these two until I get the gcode produced with proper splice information */
 double get_pre_transition_mm(int j);

@@ -14,6 +14,7 @@ layer_t layers[MAX_RUNS];
 int n_layers;
 transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
+transition_block_t transition_block;
 
 static double
 filament_cross_section_area()
@@ -250,13 +251,94 @@ find_model_bb_to_tower_height(bb_t *model_bb)
     }
 }
 
+#define BLOCK_SEP 5
+
+static void
+place_transition_block_common(bb_t *model_bb, double *d, double mid[2])
+{
+    double size[2];
+    int mn = 0;
+    int i;
+
+    transition_block_size(size);
+
+    for (i = 1; i < 4; i++) if (d[i] < d[mn]) mn = i;
+
+    switch(mn) {
+    case 0:
+	transition_block.x = model_bb->x[0] - BLOCK_SEP - size[0];
+	transition_block.y = mid[1]-size[1]/2;
+	transition_block.w = size[0];
+	transition_block.h = size[1];
+	break;
+    case 1:
+	transition_block.x = model_bb->x[1] + BLOCK_SEP;
+	transition_block.y = mid[1]-size[1]/2;
+	transition_block.w = size[0];
+	transition_block.h = size[1];
+	break;
+    case 2:
+	transition_block.x = mid[0]-size[1]/2;
+	transition_block.y = model_bb->y[0] - BLOCK_SEP - size[0];
+	transition_block.w = size[1];
+	transition_block.h = size[0];
+	break;
+    case 3:
+	transition_block.x = mid[0]-size[1]/2;
+	transition_block.y = model_bb->y[1] + BLOCK_SEP;
+	transition_block.w = size[1];
+	transition_block.h = size[0];
+	break;
+    }
+}
+
+static void
+place_transition_block_delta()
+{
+    bb_t model_bb;
+    double d[4];
+    double mid[2] = { 0, 0 };
+
+    find_model_bb_to_tower_height(&model_bb);
+
+    d[0] = -model_bb.x[0];
+    d[1] = model_bb.x[1];
+    d[2] = -model_bb.y[0];
+    d[3] = model_bb.y[1];
+
+    place_transition_block_common(&model_bb, d, mid);
+}
+
+static void
+place_transition_block_cartesian()
+{
+    bb_t model_bb;
+    double d[4];
+    double mid[2] = { printer->bed_x / 2, printer->bed_y / 2 };
+
+    find_model_bb_to_tower_height(&model_bb);
+
+    d[0] = model_bb.x[0];
+    d[1] = printer->bed_x - model_bb.x[1];
+    d[2] = model_bb.y[0];
+    d[3] = printer->bed_y - model_bb.y[1];
+
+    place_transition_block_common(&model_bb, d, mid);
+}
+
+static void
+place_transition_block()
+{
+    if (printer->circular) place_transition_block_delta();
+    else place_transition_block_cartesian();
+}
 
 void
-transition_block_create_from_runs(bb_t *model_bb)
+transition_block_create_from_runs()
 {
     compute_transition_tower();
     prune_transition_tower();
     add_min_transition_lengths(transition_block_area());
     reduce_pings();
-    find_model_bb_to_tower_height(model_bb);
+    place_transition_block();
 }
