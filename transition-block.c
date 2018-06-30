@@ -9,33 +9,11 @@
 #include "materials.h"
 #include "transition-block.h"
 
-extern printer_t *printer;
-
 layer_t layers[MAX_RUNS];
 int n_layers;
 transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
 transition_block_t transition_block;
-
-static double
-filament_cross_section_area()
-{
-    double radius = printer->filament/2;
-
-    return M_PI*radius*radius;
-}
-
-static double
-filament_length_to_mm3(double len)
-{
-    return filament_cross_section_area() * len;
-}
-
-static double
-filament_mm3_to_length(double mm3)
-{
-    return mm3 / filament_cross_section_area();
-}
 
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
  * post_transition is the amount of filament to consume for the transition after printing everything
@@ -133,6 +111,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
 
     if (n_layers == 0 || z > layers[n_layers-1].z) {
 	layer = &layers[n_layers];
+	layer->num = n_layers;
 	bb_init(&layer->bb);
 	layer->z = z;
 	layer->h = z - (n_layers ? layers[n_layers-1].z : 0);
@@ -144,6 +123,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
 
     pre_run->post_transition = n_transitions;
     run->pre_transition = n_transitions;
+    transitions[n_transitions].num = n_transitions;
     transitions[n_transitions].from = from;
     transitions[n_transitions].to = to;
     transitions[n_transitions].mm = transition_length(from, to, *total_mm);
@@ -331,6 +311,18 @@ place_transition_block()
 {
     if (printer->circular) place_transition_block_delta();
     else place_transition_block_cartesian();
+    transition_block.area = transition_block_area();
+}
+
+static void
+compute_densities()
+{
+    int i;
+
+    for (i = 0; i < n_layers; i++) {
+	double area = filament_length_to_mm3(layers[i].mm) / layers[i].h;
+	layers[i].density = area / transition_block.area;
+    }
 }
 
 void
@@ -341,4 +333,5 @@ transition_block_create_from_runs()
     add_min_transition_lengths(transition_block_area());
     reduce_pings();
     place_transition_block();
+    compute_densities();
 }
