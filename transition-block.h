@@ -18,6 +18,7 @@ typedef struct {
     int num;
     int from, to;
     double mm;
+    double extra_mm;
     int ping;
 } transition_t;
 

@@ -11,6 +11,8 @@
 
 #define EXTRA_FILAMENT	75
 
+#define EPSILON 0.0000001
+
 typedef struct {
     enum {
 	MOVE,
@@ -550,10 +552,10 @@ transition_fill(layer_t *l, transition_t *t)
     if (corner == TOP_LEFT || corner == TOP_RIGHT) y_stride = -y_stride;
 
     pct_to_xy(corner, 0, transition_pct, &xy);
-    while ((is_last || transition_e - transition_starting_e < t->mm) && transition_pct < 1) {
+    while ((is_last || transition_e - transition_starting_e < t->mm + t->extra_mm) && transition_pct < 1 - EPSILON) {
 	int is_y_first;
 
-	for (is_y_first = 0; is_y_first < 2 && transition_pct < 1; is_y_first++) {
+	for (is_y_first = 0; is_y_first < 2 && transition_pct < 1 - EPSILON; is_y_first++) {
 	    /* move along the first side */
 	    next_xy = xy;
 	    if (is_y_first) next_xy.x += x_stride;
@@ -562,7 +564,7 @@ transition_fill(layer_t *l, transition_t *t)
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
 	    transition_pct = xy_to_pct(corner, &next_xy);
 
-	    if (transition_pct >= 1) break;
+	    if (transition_pct >= 1 - EPSILON) break;
 
 	    /* cross over to the other side */
 	    xy = next_xy;
@@ -582,12 +584,15 @@ transition_fill(layer_t *l, transition_t *t)
 static void
 generate_transition(layer_t *l, transition_t *t, double *total_e)
 {
+    double original_e;
     double actual_e;
     xy_t start_xy;
 
-    transition_e = last_e;
+    original_e = transition_e = last_e;
 
-    fprintf(o, "; Transition: %d->%d with %f mm\n", t->from, t->to, t->mm);
+    if (t->from != t->to) add_splice(t->from, *total_e + t->mm * printer->transition_target + t->extra_mm);
+
+    fprintf(o, "; Transition: %d->%d with %f + %f mm\n", t->from, t->to, t->mm, t->extra_mm);
     // assume retraction was done just before tool change: do_retraction();
     move_to(NAN, NAN, l->z + z_hop);
 
@@ -619,8 +624,9 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 	pings[n_pings].mm = *total_e + actual_e;
 	n_pings++;
     }
-    fprintf(o, "; Done transition: %d->%d actually used %fmm for %fmm\n", t->from, t->to, actual_e, t->mm);
-    if (t->from != t->to) add_splice(t->from, *total_e + actual_e * printer->transition_target);
+
+    fprintf(o, "G92 E%f\n", original_e);
+    fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->mm, t->extra_mm);
 
     *total_e += actual_e;
 }

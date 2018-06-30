@@ -15,6 +15,9 @@ transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
 transition_block_t transition_block;
 
+#define MIN_FIRST_SPLICE_LEN	140
+#define MIN_SPLICE_LEN		 80
+
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
  * post_transition is the amount of filament to consume for the transition after printing everything
  */
@@ -30,7 +33,7 @@ double
 get_pre_transition_mm(int j)
 {
     transition_t *t = get_pre_transition(j);
-    return t ? printer->transition_target * t->mm : 0;
+    return t ? printer->transition_target * t->mm : 0 + t->extra_mm;
 }
 
 static transition_t *
@@ -82,7 +85,7 @@ static double
 transition_length(int from, int to, double total_mm)
 {
     double mn = printer->min_transition_len;
-    double mx = total_mm < 500 ? printer->early_transition_len : printer->transition_len;
+    double mx = total_mm < 5000 ? printer->early_transition_len : printer->transition_len;
     active_material_t *in = get_active_material(to);
     active_material_t *out = get_active_material(from);
     double factor;
@@ -105,9 +108,10 @@ transition_length(int from, int to, double total_mm)
 }
 
 static void
-add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *total_mm)
+add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *total_mm, double *filament_mm)
 {
     layer_t *layer;
+    double mm;
 
     if (n_layers == 0 || z > layers[n_layers-1].z) {
 	layer = &layers[n_layers];
@@ -128,15 +132,31 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     transitions[n_transitions].to = to;
     transitions[n_transitions].mm = transition_length(from, to, *total_mm);
     transitions[n_transitions].ping = 0;
+
+    (*filament_mm) += printer->transition_target * transitions[n_transitions].mm;
+    if (n_transitions == 0 && *filament_mm < MIN_FIRST_SPLICE_LEN) {
+	transitions[n_transitions].extra_mm = MIN_FIRST_SPLICE_LEN - *filament_mm;
+    } else if (from == to) {
+	transitions[n_transitions].extra_mm = 0;
+    } else if (*filament_mm < MIN_SPLICE_LEN) {
+	transitions[n_transitions].extra_mm = MIN_SPLICE_LEN - *filament_mm;
+    } else {
+	transitions[n_transitions].extra_mm = 0;
+    }
+
+    mm = transitions[n_transitions].mm + transitions[n_transitions].extra_mm;
+    (*filament_mm) = (1 - printer->transition_target) * transitions[n_transitions].mm;
+
     n_transitions++;
 
     layer = &layers[n_layers-1];
     layer->n_transitions++;
-    layer->mm += transitions[n_transitions-1].mm;
+
+    layer->mm += mm;
+    (*total_mm) += mm;
+
     bb_add_bb(&layer->bb, &pre_run->bb);
     bb_add_bb(&layer->bb, &run->bb);
-
-    (*total_mm) += transitions[n_transitions-1].mm;
 }
 
 #define PING_THRESHOLD 425
@@ -145,16 +165,18 @@ static void
 compute_transition_tower()
 {
     int i;
-    double total_mm = 0;
+    double total_mm, filament_mm;
     double last_ping_at = 0;
+
+    total_mm = filament_mm = runs[0].e;
 
     for (i = 1; i < n_runs; i++) {
 	double ping_delta;
 
 	if (runs[i-1].t != runs[i].t) {
-	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm);
+	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm, &filament_mm);
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
-	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm);
+	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm, &filament_mm);
 	}
 
 	ping_delta = total_mm - last_ping_at;
@@ -197,8 +219,12 @@ add_min_transition_lengths(double area)
 	    double mm3 = this_area * layers[i].h;
 	    double len = filament_mm3_to_length(mm3);
 	    transition_t *t = &transitions[layers[i].transition0];
+	    double need_mm = len - (t->mm + t->extra_mm);
 
-	    if (t->mm < len) layers[i].mm = t->mm = len;
+	    if (need_mm > 0) {
+		layers[i].mm += need_mm;
+		t->mm += need_mm;
+	    }
 	}
     }
 }
