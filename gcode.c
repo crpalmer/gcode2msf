@@ -273,8 +273,6 @@ preprocess()
 	token_t t = get_next_token();
 	switch(t.t) {
 	case MOVE:
-	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
-
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
 		if (started) {
@@ -284,6 +282,7 @@ preprocess()
 		last_e_z = t.x.move.z;
 		reset_state();
 	    }
+	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
 	    last_e = t.x.move.e;
 	    last_x = t.x.move.x;
 	    last_y = t.x.move.y;
