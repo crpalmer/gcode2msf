@@ -19,6 +19,7 @@ typedef struct {
     unsigned loading_offset;
     double pv;
     double calibration_len;
+    double min_bottom_density;
 } printer_t;
 
 extern printer_t *printer;

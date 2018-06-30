@@ -193,7 +193,7 @@ add_min_transition_lengths(double area)
 
     for (i = 0; i < n_layers; i++) {
 	if (layers[i].n_transitions == 1) {
-	    double this_area = area*printer->min_density;
+	    double this_area = area*(i == 0 ? printer->min_bottom_density : printer->min_density);
 	    double mm3 = this_area * layers[i].h;
 	    double len = filament_mm3_to_length(mm3);
 	    transition_t *t = &transitions[layers[i].transition0];
