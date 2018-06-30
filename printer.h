@@ -21,12 +21,7 @@ typedef struct {
     double calibration_len;
 } printer_t;
 
-extern printer_t *printer;
-
-int
+printer_t *
 printer_load(const char *fname);
-
-double filament_length_to_mm3(double len);
-double filament_mm3_to_length(double len);
 
 #endif

@@ -4,18 +4,15 @@
 #include "gcode.h"
 
 typedef struct {
-    int    num;
     bb_t   bb;
     double z;
     double h;
     int transition0;
     int n_transitions;
     double mm;
-    double density;
 } layer_t;
 
 typedef struct {
-    int num;
     int from, to;
     double mm;
     int ping;
@@ -23,7 +20,6 @@ typedef struct {
 
 typedef struct {
     double x, y, w, h;
-    double area;
 } transition_block_t;
 
 extern layer_t layers[MAX_RUNS];
