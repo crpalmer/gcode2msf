@@ -463,39 +463,74 @@ typedef struct {
     double x, y;
 } xy_t;
 
+typedef enum {
+    BOTTOM_LEFT, TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT
+} corner_t;
+
+static corner_t
+layer_to_corner(layer_t *l)
+{
+    return l->num % 4;
+}
+
 static double
-xy_to_pct(xy_t *xy)
+xy_to_pct(corner_t corner, xy_t *xy)
 {
-    return (xy->x - transition_block.x + xy->y - transition_block.y) / (transition_block.w + transition_block.h);
-}
+    double x = transition_block.x;
+    double y = transition_block.y;
+    double w = transition_block.w;
+    double h = transition_block.h;
+    double used;
 
-static void
-pct_to_xy(int x_first, double pct, xy_t *xy)
-{
-    double dist = pct * (transition_block.w + transition_block.h);
-    if (x_first) {
-	xy->x = transition_block.x + dist;
-	xy->y  = transition_block.y;
-	if (xy->x > transition_block.x + transition_block.w) {
-	    xy->x = transition_block.x + transition_block.w;
-	    xy->y  = transition_block.y + (dist - transition_block.w);
-	}
-    } else {
-	xy->x = transition_block.x;
-	xy->y  = transition_block.y + dist;
-	if (xy->y  > transition_block.y + transition_block.h) {
-	    xy->x = transition_block.x + (dist - transition_block.h);
-	    xy->y  = transition_block.y + transition_block.h;
-	}
+    switch(corner) {
+    case BOTTOM_LEFT:  used = xy->x - x     + xy->y - y;     break;
+    case TOP_LEFT:     used = xy->x - x     + y + h - xy->y; break;
+    case TOP_RIGHT:    used = x + w - xy->x + y + h - xy->y; break;
+    case BOTTOM_RIGHT: used = x + w - xy->x + xy->y - y;     break;
     }
+
+    assert(used >= 0);
+
+    return used / (transition_block.w + transition_block.h);
 }
 
 static void
-clamp_xy_to_perimeter(int x_first, xy_t *xy)
+pct_to_xy(corner_t corner, int is_y_first, double pct, xy_t *xy)
 {
-    double pct = xy_to_pct(xy);
+    double dist, dist_x, dist_y;
+    double x = transition_block.x;
+    double y = transition_block.y;
+    double w = transition_block.w;
+    double h = transition_block.h;
+    int dir_x, dir_y;
+
+    dist = pct * (transition_block.w + transition_block.h);
+
+    switch(corner) {
+    case BOTTOM_LEFT:  dir_x =  1; dir_y =  1; break;
+    case TOP_LEFT:     dir_x =  1; dir_y = -1; y += h; break;
+    case TOP_RIGHT:    dir_x = -1; dir_y = -1; x += w; y += h; break;
+    case BOTTOM_RIGHT: dir_x = -1; dir_y =  1; x += w; break;
+    }
+
+    if (is_y_first == 0) {
+	dist_x = dist > w ? w : dist;
+	dist_y = dist > w ? dist - w : 0;
+    } else {
+	dist_x = dist > h ? dist - h : 0;
+	dist_y = dist > h ? h : dist;
+    }
+
+    xy->x = x + dir_x * dist_x;
+    xy->y = y + dir_y * dist_y;
+}
+
+static void
+clamp_xy_to_perimeter(corner_t corner, int is_y_first, xy_t *xy)
+{
+    double pct = xy_to_pct(corner, xy);
     if (pct > 1) pct = 1;
-    pct_to_xy(x_first, pct, xy);
+    pct_to_xy(corner, is_y_first, pct, xy);
 }
 
 static void
@@ -507,29 +542,33 @@ transition_fill(layer_t *l, transition_t *t)
     double y_stride = stride;
     xy_t xy, next_xy;
     int is_last = t->num == l->transition0 + l->n_transitions - 1;
+    corner_t corner = layer_to_corner(l);
 
     fprintf(o, "; Filling in the tower portion\n");
 
-    pct_to_xy(0, transition_pct, &xy);
-    while ((is_last || transition_e - transition_starting_e < t->mm) && transition_pct < 1) {
-	int x_first;
+    if (corner == TOP_RIGHT || corner == BOTTOM_RIGHT) x_stride = -x_stride;
+    if (corner == TOP_LEFT || corner == TOP_RIGHT) y_stride = -y_stride;
 
-	for (x_first = 0; x_first < 2 && transition_pct < 1; x_first++) {
+    pct_to_xy(corner, 0, transition_pct, &xy);
+    while ((is_last || transition_e - transition_starting_e < t->mm) && transition_pct < 1) {
+	int is_y_first;
+
+	for (is_y_first = 0; is_y_first < 2 && transition_pct < 1; is_y_first++) {
 	    /* move along the first side */
 	    next_xy = xy;
-	    if (x_first) next_xy.x += x_stride;
+	    if (is_y_first) next_xy.x += x_stride;
 	    else next_xy.y += y_stride;
-	    clamp_xy_to_perimeter(x_first, &next_xy);
+	    clamp_xy_to_perimeter(corner, is_y_first, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    transition_pct = xy_to_pct(&next_xy);
+	    transition_pct = xy_to_pct(corner, &next_xy);
 
 	    if (transition_pct >= 1) break;
 
 	    /* cross over to the other side */
 	    xy = next_xy;
-	    pct_to_xy(! x_first, transition_pct, &next_xy);
+	    pct_to_xy(corner, ! is_y_first, transition_pct, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    transition_pct = xy_to_pct(&next_xy);
+	    transition_pct = xy_to_pct(corner, &next_xy);
 	    xy = next_xy;
 	}
     }
@@ -554,7 +593,7 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 
     if (l->transition0 == t->num) transition_pct = 0;
 
-    pct_to_xy(0, transition_pct, &start_xy);  // TODO: alternate corners
+    pct_to_xy(layer_to_corner(l), 0, transition_pct, &start_xy);  // TODO: alternate corners
     move_to(start_xy.x, start_xy.y, NAN);
     if (z_hop) move_to(NAN, NAN, l->z);
 
