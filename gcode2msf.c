@@ -12,8 +12,6 @@
 
 static int summary = 0;
 
-printer_t *printer;
-
 static void
 output_summary()
 {
@@ -247,7 +245,7 @@ int main(int argc, char **argv)
 	exit(0);
     }
 
-    if ((printer = printer_load(argv[1])) == NULL) {
+    if (! printer_load(argv[1])) {
 	perror(argv[1]);
     }
 

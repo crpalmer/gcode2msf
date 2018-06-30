@@ -36,8 +36,6 @@ typedef struct {
     long pos;
 } token_t;
 
-extern printer_t *printer;
-
 static FILE *f, *o;
 
 static char buf[1024*1024];
@@ -68,10 +66,19 @@ int n_pings = 0;
 static double retract_mm = 0;
 static double retract_mm_per_min = 0;
 static double z_hop = 0;
+static double travel_mm_per_min = 0;
+static double s3d_default_speed = 0;
+static double infill_mm_per_min = 0;
+static double first_layer_mm_per_min = 0;
 
 static double mm_per_sec_to_per_min(double mm_per_sec)
 {
     return mm_per_sec * 60;
+}
+
+static double s3d_speed(double pct)
+{
+    return s3d_default_speed * pct;
 }
 
 struct {
@@ -83,10 +90,16 @@ struct {
     { "; destring_length = ", &retract_mm, NULL },
     { "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
     { "; Z_lift_mm = ", &z_hop, NULL },
+    { "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
+    { "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
+    { "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
     /* S3D */
     { ";   extruderRetractionDistance,", &retract_mm, NULL },
     { ";   extruderRetractionZLift,", &z_hop, NULL },
     { ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
+    { ";   rapidXYspeed,", &travel_mm_per_min, NULL },
+    { ";   defaultSpeed,", &s3d_default_speed, NULL },
+    { ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
 };
 
 #define N_GCODE_PARAMS (sizeof(gcode_params) / sizeof(gcode_params[0]))
@@ -326,6 +339,58 @@ preprocess()
     }
 }
 
+static double transition_e, transition_starting_e;
+static double transition_pct;
+
+static double
+extrusion_speed()
+{
+    // TODO: Handle layer 1 speed
+    // TODO: Handle perimeter speed
+
+    if (infill_mm_per_min > 0) return infill_mm_per_min;
+    if (printer->print_speed > 0) return printer->print_speed;
+}
+
+static void
+move_to_and_extrude(double x, double y, double z, double e)
+{
+    fprintf(o, "G1");
+    if (isfinite(x)) fprintf(o, " X%f", x);
+    if (isfinite(y)) fprintf(o, " Y%f", y);
+    if (isfinite(z)) fprintf(o, " Z%f", z);
+    if (isfinite(e)) {
+	fprintf(o, " E%f F%f\n", e, extrusion_speed());
+	transition_e = e;
+    } else {
+        fprintf(o, " F%f\n", travel_mm_per_min);
+    }
+}
+
+static void
+move_to(double x, double y, double z)
+{
+    move_to_and_extrude(x, y, z, NAN);
+}
+
+static void
+do_retraction()
+{
+    if (retract_mm) {
+	transition_e -= retract_mm;
+	fprintf(o, "G1 E%f F%f\n", transition_e, retract_mm_per_min);
+    }
+}
+
+static void
+undo_retraction()
+{
+    if (retract_mm) {
+	transition_e += retract_mm;
+	fprintf(o, "G1 E%f F%f\n", transition_e, retract_mm_per_min);
+    }
+}
+
 static void
 add_splice(int drive, double mm)
 {
@@ -334,18 +399,169 @@ add_splice(int drive, double mm)
     n_splices++;
 }
 
-static void
-generate_transition(transition_t *t, double *total_e)
+static double
+transition_block_corner_x(int corner, double early)
 {
+    corner = corner % 4;
+    switch(corner) {
+    case 0: return transition_block.x;
+    case 1: return transition_block.x + transition_block.w - early;
+    case 2: return transition_block.x + transition_block.w;
+    case 3: return transition_block.x + early;
+    }
+}
+
+static double
+transition_block_corner_y(int corner, double early)
+{
+    corner = corner % 4;
+    switch(corner) {
+    case 0: return transition_block.y + early;
+    case 1: return transition_block.y;
+    case 2: return transition_block.y + transition_block.h - early;
+    case 3: return transition_block.y + transition_block.h;
+    }
+}
+
+static double
+transition_block_start_x(layer_t *l)
+{
+    return transition_block_corner_x(l->num % 4, 0);
+}
+
+static double
+transition_block_start_y(layer_t *l)
+{
+    return transition_block_corner_y(l->num % 4, 0);
+}
+
+static double
+extrusion_mm(layer_t *l, double x0, double y0, double x1, double y1)
+{
+   double len = sqrt((x1-x0)*(x1-x0) + (y1-y0)*(y1-y0));
+   double mm3 = len * printer->nozzle * l->h;
+   return transition_e + filament_mm3_to_length(mm3);
+}
+
+static void
+draw_perimeter(layer_t *l, transition_t *t)
+{
+    int i;
+    double last_x = transition_block_start_x(l);
+    double last_y = transition_block_start_y(l);
+
+    fprintf(o, "; Drawing the tower perimeter\n");
+    for (i = 1; i <= 4; i++) {
+	double x = transition_block_corner_x(l->num+i, i == 4 ? printer->nozzle / 2 : 0);
+	double y = transition_block_corner_y(l->num+i, i == 4 ? printer->nozzle / 2 : 0);
+        move_to_and_extrude(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
+	last_x = x;
+	last_y = y;
+    }
+}
+
+static double
+xy_to_pct(double *xy)
+{
+    return (xy[0] - transition_block.w + xy[1] - transition_block.h) / (transition_block.w + transition_block.h);
+}
+
+static void
+pct_to_xy(int x_first, double pct, double *xy)
+{
+    double dist = pct * (transition_block.w + transition_block.h);
+    if (x_first) {
+	xy[0] = transition_block.x + dist;
+	xy[1] = transition_block.y;
+	if (xy[0] > transition_block.x + transition_block.w) {
+	    xy[0] = transition_block.x + transition_block.w;
+	    xy[1] = transition_block.y + (dist - transition_block.w);
+	}
+    } else {
+	xy[0] = transition_block.x;
+	xy[1] = transition_block.y + dist;
+	if (xy[1] > transition_block.y + transition_block.h) {
+	    xy[0] = transition_block.x + (dist - transition_block.h);
+	    xy[1] = transition_block.y + transition_block.h;
+	}
+    }
+}
+
+static void
+clamp_xy_to_perimeter(int x_first, double *xy)
+{
+    double pct = xy_to_pct(xy);
+    pct_to_xy(x_first, pct, xy);
+}
+
+static void
+transition_fill(layer_t *l, transition_t *t)
+{
+    double stride = printer->nozzle / l->density;
+    double xy[2], next_xy[2];
+    int x_first = 1;
+
+    fprintf(o, "; Filling in the tower portion\n");
+
+    while (transition_e - transition_start_e < t->mm) {
+	pct_to_xy(x_first, transition_pct, xy);
+	next_xy[0] = xy[0] + stride;
+	next_xy[1] = xy[1];
+	clamp_xy_to_perimeter(x_first, next_xy);
+
+	move_to_and_extrude(next_xy[0], next_xy[1], NAN, extrusion_mm(l, xy[0], xy[1], next_xy[0], next_xy[1]);
+
+	next_x += printer->nozzle;
+	transition_next_y += printer->nozzle;
+	if (transition_next_x > transition_block.x + transition_block.w) break;
+	if (transition_next_y > 
+#endif
+}
+
+static void
+generate_transition(layer_t *l, transition_t *t, double *total_e)
+{
+    double actual_e;
+
+    transition_e = last_e;
+
     fprintf(o, "; Transition: %d->%d with %f mm\n", t->from, t->to, t->mm);
-    (*total_e) += t->mm * printer->transition_target;
-    if (t->from != t->to) add_splice(t->from, *total_e);
+    // assume retraction was done just before tool change: do_retraction();
+    move_to(NAN, NAN, l->z + z_hop);
+
+    if (l->transition0 == t->num) {
+	transition_pct = 0;
+printf("layer %d (%d transitions): density %f\n", l->num, l->n_transitions, l->density);
+    }
+    move_to(transition_block_start_x(l), transition_block_start_y(l), NAN);
+    if (z_hop) move_to(NAN, NAN, l->z);
+
+    undo_retraction();
+
+    transition_starting_e = transition_e;
+
+    if (0 && t->num == 0) draw_perimeter(l, t);
+
+    transition_fill(l, t);
+
+    actual_e = transition_e - transition_starting_e;
+
+    do_retraction();
+
+    move_to(NAN, NAN, last_z+z_hop);
+    move_to(last_x, last_y, NAN);
+    if (z_hop) move_to(NAN, NAN, last_z);
+    // assume unretraction will done just immediately after tool change: undo_retraction();
+
     if (t->ping) {
 	// TODO: actually report the correct extrusion for the ping
-	pings[n_pings].mm = *total_e;
+	pings[n_pings].mm = *total_e + actual_e;
 	n_pings++;
     }
-    (*total_e) += t->mm * (1 - printer->transition_target);	// this should be actual extruded when I really print the block
+    fprintf(o, "; Done transition: %d->%d actually used %fmm for %fmm\n", t->from, t->to, actual_e, t->mm);
+    if (t->from != t->to) add_splice(t->from, *total_e + actual_e * printer->transition_target);
+
+    *total_e += actual_e;
 }
 
 static void
@@ -375,7 +591,7 @@ produce_gcode()
 	    if (t < n_transitions && started && token.x.move.e != last_e && may_need_transition) {
 		last_e_z = token.x.move.z;
 		last_e_tool = tool;
-		generate_transition(&transitions[t], &total_e);
+		generate_transition(&layers[l], &transitions[t], &total_e);
 		assert(token.x.move.z == layers[l].z);
 		t++;
 		if (layers[l].transition0 + layers[l].n_transitions == t) l++;

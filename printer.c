@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
+#include <math.h>
 #include "printer.h"
 #include "yaml-wrapper.h"
 
@@ -32,10 +33,11 @@ static struct {
 
 #define N_KEYS (sizeof(keys) / sizeof(keys[0]))
 
-printer_t *
+printer_t *printer;
+
+int
 printer_load(const char *fname)
 {
-    printer_t *printer;
     yaml_wrapper_t *p;
     yaml_event_t event, event2;
     int ki;
@@ -100,5 +102,26 @@ process_event:
 	yaml_event_delete(&event);
     }
 
-    return printer;
+    return 1;
+}
+
+
+static double
+filament_cross_section_area()
+{
+    double radius = printer->filament/2;
+
+    return M_PI*radius*radius;
+}
+
+double
+filament_length_to_mm3(double len)
+{
+    return filament_cross_section_area() * len;
+}
+
+double
+filament_mm3_to_length(double mm3)
+{
+    return mm3 / filament_cross_section_area();
 }
