@@ -134,6 +134,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     layer = &layers[n_layers-1];
     layer->n_transitions++;
     layer->mm += transitions[n_transitions-1].mm;
+    bb_add_bb(&layer->bb, &pre_run->bb);
     bb_add_bb(&layer->bb, &run->bb);
 
     (*total_mm) += transitions[n_transitions-1].mm;
