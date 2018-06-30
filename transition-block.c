@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <assert.h>
 #include "printer.h"
 #include "materials.h"
 #include "transition-block.h"
@@ -69,14 +70,12 @@ transition_block_area()
 void
 transition_block_size(double xy[2])
 {
-    /* Make y = 2*x (or visa versa) then you get
-       area = x * 2*x = 2*x^2
-       x = sqrt(area) / sqrt(2)
-     */
     double area = transition_block_area();
-    double x = sqrt(area) / sqrt(2);
-    xy[0] = x;
-    xy[1] = 2*x;
+    double sqrt_area = sqrt(area);
+    double ratio = sqrt((1 + sqrt(5))/2);	// Golden ratio
+    xy[0] = sqrt_area / ratio;
+    xy[1] = sqrt_area * ratio;
+    assert(fabs(xy[0] * xy[1] - area) < 0.0001);
 }
 
 static double
