@@ -12,6 +12,7 @@ typedef struct {
     int n_transitions;
     double mm;
     double density;
+    int    use_perimeter;
 } layer_t;
 
 typedef struct {

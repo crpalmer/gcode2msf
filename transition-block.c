@@ -17,6 +17,7 @@ transition_block_t transition_block;
 
 #define MIN_FIRST_SPLICE_LEN	140
 #define MIN_SPLICE_LEN		 80
+#define DENSITY_FOR_PERIMETER	0.2
 
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
  * post_transition is the amount of filament to consume for the transition after printing everything
@@ -33,7 +34,7 @@ double
 get_pre_transition_mm(int j)
 {
     transition_t *t = get_pre_transition(j);
-    return t ? printer->transition_target * t->mm : 0 + t->extra_mm;
+    return t ? printer->transition_target * t->mm : 0;
 }
 
 static transition_t *
@@ -47,7 +48,7 @@ double
 get_post_transition_mm(int j)
 {
     transition_t *t = get_post_transition(j);
-    return t ? (1-printer->transition_target) * t->mm : 0;
+    return t ? (1-printer->transition_target) * t->mm + t->extra_mm: 0;
 }
 
 static double
@@ -207,6 +208,11 @@ prune_transition_tower()
 	if (runs[i].post_transition > n_transitions) runs[i].post_transition = -1;
     }
 }
+static double
+layer_min_density(int i)
+{
+    return (i == 0 ? printer->min_bottom_density : printer->min_density);
+}
 
 static void
 add_min_transition_lengths(double area)
@@ -215,7 +221,7 @@ add_min_transition_lengths(double area)
 
     for (i = 0; i < n_layers; i++) {
 	if (layers[i].n_transitions == 1) {
-	    double this_area = area*(i == 0 ? printer->min_bottom_density : printer->min_density);
+	    double this_area = area*layer_min_density(i);
 	    double mm3 = this_area * layers[i].h;
 	    double len = filament_mm3_to_length(mm3);
 	    transition_t *t = &transitions[layers[i].transition0];
@@ -341,13 +347,33 @@ place_transition_block()
 }
 
 static void
-compute_densities()
+compute_densities_and_perimeters()
 {
     int i;
 
     for (i = 0; i < n_layers; i++) {
 	double area = filament_length_to_mm3(layers[i].mm) / layers[i].h;
-	layers[i].density = area / transition_block.area;
+	double total_area = transition_block.area;
+	double min_density = layer_min_density(i);
+
+	layers[i].density = area / total_area;
+	layers[i].use_perimeter = (i == 0 || layers[i].density <= DENSITY_FOR_PERIMETER);
+
+	if (layers[i].use_perimeter) {
+	    double perimeter_area = 2*(transition_block.w + transition_block.h)*printer->nozzle*layers[i].h;
+	    area -= perimeter_area;
+	    total_area -= perimeter_area;
+	    layers[i].density = area / total_area;
+	}
+
+	if (layers[i].density < min_density) {
+	    double needed = filament_mm3_to_length(min_density*total_area*layers[i].h) - filament_mm3_to_length(layers[i].density*total_area*layers[i].h);
+	    transitions[layers[i].transition0].mm += needed;
+	    layers[i].mm += needed;
+	    layers[i].density = min_density;
+	}
+
+	assert(layers[i].density <= 1);
     }
 }
 
@@ -359,5 +385,5 @@ transition_block_create_from_runs()
     add_min_transition_lengths(transition_block_area());
     reduce_pings();
     place_transition_block();
-    compute_densities();
+    compute_densities_and_perimeters();
 }

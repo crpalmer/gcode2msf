@@ -340,6 +340,7 @@ preprocess()
     }
 }
 
+static double layer_transition_e;
 static double transition_e, transition_starting_e;
 static double transition_pct;
 
@@ -400,6 +401,21 @@ add_splice(int drive, double mm)
     n_splices++;
 }
 
+typedef enum {
+    BOTTOM_LEFT = 0, BOTTOM_RIGHT, TOP_RIGHT, TOP_LEFT
+} corner_t;
+
+static corner_t
+layer_to_corner(layer_t *l)
+{
+    switch(l->num % 4) {
+    case 0: return BOTTOM_LEFT;
+    case 1: return TOP_LEFT;
+    case 2: return BOTTOM_RIGHT;
+    case 3: return TOP_RIGHT;
+    }
+}
+
 static double
 transition_block_corner_x(int corner, double early)
 {
@@ -425,18 +441,6 @@ transition_block_corner_y(int corner, double early)
 }
 
 static double
-transition_block_start_x(layer_t *l)
-{
-    return transition_block_corner_x(l->num % 4, 0);
-}
-
-static double
-transition_block_start_y(layer_t *l)
-{
-    return transition_block_corner_y(l->num % 4, 0);
-}
-
-static double
 extrusion_mm(layer_t *l, double x0, double y0, double x1, double y1)
 {
    double len = sqrt((x1-x0)*(x1-x0) + (y1-y0)*(y1-y0));
@@ -448,13 +452,14 @@ static void
 draw_perimeter(layer_t *l, transition_t *t)
 {
     int i;
-    double last_x = transition_block_start_x(l);
-    double last_y = transition_block_start_y(l);
+    corner_t corner = layer_to_corner(l);
+    double last_x = transition_block_corner_x(corner, 0);
+    double last_y = transition_block_corner_y(corner, 0);
 
     fprintf(o, "; Drawing the tower perimeter\n");
     for (i = 1; i <= 4; i++) {
-	double x = transition_block_corner_x(l->num+i, i == 4 ? printer->nozzle / 2 : 0);
-	double y = transition_block_corner_y(l->num+i, i == 4 ? printer->nozzle / 2 : 0);
+	double x = transition_block_corner_x(corner+i, i == 4 ? printer->nozzle / 2 : 0);
+	double y = transition_block_corner_y(corner+i, i == 4 ? printer->nozzle / 2 : 0);
         move_to_and_extrude(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
 	last_x = x;
 	last_y = y;
@@ -465,23 +470,38 @@ typedef struct {
     double x, y;
 } xy_t;
 
-typedef enum {
-    BOTTOM_LEFT, TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT
-} corner_t;
-
-static corner_t
-layer_to_corner(layer_t *l)
+static double
+transition_block_adjusted_x(layer_t *l)
 {
-    return l->num % 4;
+    return transition_block.x + (l->use_perimeter ? printer->nozzle/2 : 0);
 }
 
 static double
-xy_to_pct(corner_t corner, xy_t *xy)
+transition_block_adjusted_y(layer_t *l)
 {
-    double x = transition_block.x;
-    double y = transition_block.y;
-    double w = transition_block.w;
-    double h = transition_block.h;
+    return transition_block.y + (l->use_perimeter ? printer->nozzle/2 : 0);
+}
+
+static double
+transition_block_adjusted_w(layer_t *l)
+{
+    return transition_block.w - 2*(l->use_perimeter ? printer->nozzle/2 : 0);
+}
+
+static double
+transition_block_adjusted_h(layer_t *l)
+{
+    return transition_block.h - 2*(l->use_perimeter ? printer->nozzle/2 : 0);
+}
+
+static double
+xy_to_pct(layer_t *l, xy_t *xy)
+{
+    corner_t corner = layer_to_corner(l);
+    double x = transition_block_adjusted_x(l);
+    double y = transition_block_adjusted_y(l);
+    double w = transition_block_adjusted_w(l);
+    double h = transition_block_adjusted_h(l);
     double used;
 
     switch(corner) {
@@ -493,20 +513,21 @@ xy_to_pct(corner_t corner, xy_t *xy)
 
     assert(used >= 0);
 
-    return used / (transition_block.w + transition_block.h);
+    return used / (transition_block_adjusted_w(l) + transition_block_adjusted_h(l));
 }
 
 static void
-pct_to_xy(corner_t corner, int is_y_first, double pct, xy_t *xy)
+pct_to_xy(layer_t *l, int is_y_first, double pct, xy_t *xy)
 {
+    corner_t corner = layer_to_corner(l);
     double dist, dist_x, dist_y;
-    double x = transition_block.x;
-    double y = transition_block.y;
-    double w = transition_block.w;
-    double h = transition_block.h;
+    double x = transition_block_adjusted_x(l);
+    double y = transition_block_adjusted_y(l);
+    double w = transition_block_adjusted_w(l);
+    double h = transition_block_adjusted_h(l);
     int dir_x, dir_y;
 
-    dist = pct * (transition_block.w + transition_block.h);
+    dist = pct * (transition_block_adjusted_w(l) + transition_block_adjusted_h(l));
 
     switch(corner) {
     case BOTTOM_LEFT:  dir_x =  1; dir_y =  1; break;
@@ -528,11 +549,11 @@ pct_to_xy(corner_t corner, int is_y_first, double pct, xy_t *xy)
 }
 
 static void
-clamp_xy_to_perimeter(corner_t corner, int is_y_first, xy_t *xy)
+clamp_xy_to_perimeter(layer_t *l, int is_y_first, xy_t *xy)
 {
-    double pct = xy_to_pct(corner, xy);
+    double pct = xy_to_pct(l, xy);
     if (pct > 1) pct = 1;
-    pct_to_xy(corner, is_y_first, pct, xy);
+    pct_to_xy(l, is_y_first, pct, xy);
 }
 
 static void
@@ -546,12 +567,12 @@ transition_fill(layer_t *l, transition_t *t)
     int is_last = t->num == l->transition0 + l->n_transitions - 1;
     corner_t corner = layer_to_corner(l);
 
-    fprintf(o, "; Filling in the tower portion\n");
+    fprintf(o, "; Filling in the tower portion, density = %f\n", l->density);
 
     if (corner == TOP_RIGHT || corner == BOTTOM_RIGHT) x_stride = -x_stride;
     if (corner == TOP_LEFT || corner == TOP_RIGHT) y_stride = -y_stride;
 
-    pct_to_xy(corner, 0, transition_pct, &xy);
+    pct_to_xy(l, 0, transition_pct, &xy);
     while ((is_last || transition_e - transition_starting_e < t->mm + t->extra_mm) && transition_pct < 1 - EPSILON) {
 	int is_y_first;
 
@@ -560,17 +581,17 @@ transition_fill(layer_t *l, transition_t *t)
 	    next_xy = xy;
 	    if (is_y_first) next_xy.x += x_stride;
 	    else next_xy.y += y_stride;
-	    clamp_xy_to_perimeter(corner, is_y_first, &next_xy);
+	    clamp_xy_to_perimeter(l, is_y_first, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    transition_pct = xy_to_pct(corner, &next_xy);
+	    transition_pct = xy_to_pct(l, &next_xy);
 
 	    if (transition_pct >= 1 - EPSILON) break;
 
 	    /* cross over to the other side */
 	    xy = next_xy;
-	    pct_to_xy(corner, ! is_y_first, transition_pct, &next_xy);
+	    pct_to_xy(l, ! is_y_first, transition_pct, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    transition_pct = xy_to_pct(corner, &next_xy);
+	    transition_pct = xy_to_pct(l, &next_xy);
 	    xy = next_xy;
 	}
     }
@@ -596,9 +617,12 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     // assume retraction was done just before tool change: do_retraction();
     move_to(NAN, NAN, l->z + z_hop);
 
-    if (l->transition0 == t->num) transition_pct = 0;
+    if (l->transition0 == t->num) {
+	transition_pct = 0;
+	layer_transition_e = 0;
+    }
 
-    pct_to_xy(layer_to_corner(l), 0, transition_pct, &start_xy);  // TODO: alternate corners
+    pct_to_xy(l, 0, transition_pct, &start_xy);  // TODO: alternate corners
     move_to(start_xy.x, start_xy.y, NAN);
     if (z_hop) move_to(NAN, NAN, l->z);
 
@@ -606,7 +630,7 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 
     transition_starting_e = transition_e;
 
-    if (0 && t->num == 0) draw_perimeter(l, t);
+    if (l->transition0 == t->num && l->use_perimeter) draw_perimeter(l, t);
 
     transition_fill(l, t);
 
@@ -629,6 +653,10 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->mm, t->extra_mm);
 
     *total_e += actual_e;
+    layer_transition_e += actual_e;
+
+    assert(t->num != l->transition0 + l->n_transitions - 1 || fabs(transition_pct - 1) < 0.001);
+    assert(t->num != l->transition0 + l->n_transitions - 1 || l->mm - 1 <= layer_transition_e <= l->mm+5);
 }
 
 static void
