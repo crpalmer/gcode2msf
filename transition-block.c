@@ -146,7 +146,8 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     }
 
     mm = transitions[n_transitions].mm + transitions[n_transitions].extra_mm;
-    (*filament_mm) = (1 - printer->transition_target) * transitions[n_transitions].mm;
+
+    if (from != to) (*filament_mm) = (1 - printer->transition_target) * transitions[n_transitions].mm;
 
     n_transitions++;
 
