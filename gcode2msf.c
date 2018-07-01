@@ -150,7 +150,7 @@ count_or_produce_splice_configurations(FILE *o, int *n_out)
 {
     int i, j;
     int handled[N_DRIVES] = { 0, };
-    int n;
+    int n = 0;
 
     for (i = 0; i < N_DRIVES; i++) {
 	active_material_t *m = get_active_material(i);
@@ -200,10 +200,11 @@ produce_msf(const char *fname)
     fprintf(o, "MSF1.4\n");
     produce_msf_colours(o);
     fprintf(o, "ppm:%s\n", float_to_hex(printer->pv / printer->calibration_len, buf));
-    fprintf(o, "lo:%x\n", printer->loading_offset);
-    fprintf(o, "ns:%x\n", n_splices);
+    fprintf(o, "lo:%04x\n", printer->loading_offset);
+    fprintf(o, "ns:%04x\n", n_splices);
     fprintf(o, "np:%04x\n", n_pings);
-    fprintf(o, "nh:%04x\n", msf_splice_configurations_n());
+    fprintf(o, "nh:0000\n");
+    fprintf(o, "na:%04x\n", msf_splice_configurations_n());
     // TODO na:
     produce_msf_splices(o);
     produce_msf_pings(o);
