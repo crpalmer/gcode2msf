@@ -222,28 +222,40 @@ static void process(const char *fname)
 
 int main(int argc, char **argv)
 {
+    init_active_materials();
+
     while (argc > 2) {
 	    if (strcmp(argv[1], "--validate") == 0) validate_only = 1;
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) gcode_trace = 1;
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
-	    else if (argc > 3 && argv[1][0] == '-' && isdigit(argv[1][1]) && argv[1][2] == '\0') {
-		set_active_material(atoi(&argv[1][1])-1, argv[3], argv[2], UNKNOWN);
-		argc -= 2;
-		argv += 2;
-	    } else break;
+	    else if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 'c' && isdigit(argv[1][2]) && argv[1][3] == '\0') {
+		set_active_material(atoi(&argv[1][2])-1, NULL, argv[2], UNKNOWN);
+		argc--;
+		argv++;
+	    } else if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 'm' && isdigit(argv[1][2]) && argv[1][3] == '\0') {
+		set_active_material(atoi(&argv[1][2])-1, argv[2], NULL, UNKNOWN);
+		argc--;
+		argv++;
+	    } else if (argv[1][0] == '-') {
+		fprintf(stderr, "unknown argument: %s\n", argv[1]);
+usage:
+		fprintf(stderr, "usage: [--trace | --summary | <colour> | <material>] printer.yml gcode.gcode\n");
+		fprintf(stderr, "  <colour>:   -cX colour to set the colour of drive \"X\" to \"colour\"\n");
+		fprintf(stderr, "  <material>: -mX material to set the material of drive \"X\" to \"material\"\n");
+		exit(0);
+	    } else {
+		break;
+	    }
 	    argc--;
 	    argv++;
     }
 
+    if (argc != 3) goto usage;
+
     if (! materials_load("materials.yml")) {
 	perror("materials.yaml");
 	exit(1);
-    }
-
-    if (argc != 3) {
-	fprintf(stderr, "usage: [--validate | --summary | --trace | --extrusions | --[1-4] colour material] printer.yaml input.yaml\n");
-	exit(0);
     }
 
     if (! printer_load(argv[1])) {

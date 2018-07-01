@@ -140,7 +140,7 @@ process_material(yaml_wrapper_t *p, material_t *m)
     }
 }
 
-static void
+void
 init_active_materials()
 {
     int i;
@@ -175,8 +175,6 @@ materials_load(const char *fname)
 
     yaml_wrapper_delete(p);
 
-    init_active_materials();
-
     return ! had_error;
 }
 
@@ -195,7 +193,7 @@ materials_find_splice(int incoming, int outgoing)
 void
 set_active_material(int drive, const char *name, const char *colour, colour_strength_t strength)
 {
-    if (strength == UNKNOWN) {
+    if (colour && strength == UNKNOWN) {
 	int i;
 
 	for (i = 0; i < N_DEFAULT_COLOUR_STRENGTHS; i++) {
@@ -207,9 +205,11 @@ set_active_material(int drive, const char *name, const char *colour, colour_stre
 	if (strength == UNKNOWN) strength = MEDIUM;
     }
 
-    active_materials[drive].m = find_or_create_material(name);
-    if (active_materials[drive].colour) free(active_materials[drive].colour);
-    active_materials[drive].colour = strdup(colour);
+    if (name) active_materials[drive].m = find_or_create_material(name);
+    if (colour) {
+	if (active_materials[drive].colour) free(active_materials[drive].colour);
+        active_materials[drive].colour = strdup(colour);
+    }
     active_materials[drive].strength = strength;
 }
 

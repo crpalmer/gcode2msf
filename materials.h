@@ -37,6 +37,9 @@ active_material_t *
 get_active_material(int drive);
 
 void
+init_active_materials(void);
+
+void
 set_active_material(int drive, const char *name, const char *colour, colour_strength_t strength);
 
 #endif
