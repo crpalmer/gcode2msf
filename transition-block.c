@@ -17,6 +17,7 @@ transition_block_t transition_block;
 
 #define MIN_FIRST_SPLICE_LEN	140
 #define MIN_SPLICE_LEN		 80
+#define MIN_PING_LEN		 22	/* Really 20, but give a little slack for pinging off tower */
 #define DENSITY_FOR_PERIMETER	0.2
 
 /* pre_transition is the amount of filament to consume for the transition prior to printing anything
@@ -225,8 +226,10 @@ add_min_transition_lengths(double area)
 	    double this_area = area*layer_min_density(i);
 	    double mm3 = this_area * layers[i].h;
 	    double len = filament_mm3_to_length(mm3);
+	    int has_ping =  transitions[layers[i].transition0].ping;
+	    double len_with_ping = has_ping && len < MIN_PING_LEN ? MIN_PING_LEN : len;
 	    transition_t *t = &transitions[layers[i].transition0];
-	    double need_mm = len - (t->mm + t->extra_mm);
+	    double need_mm = len_with_ping - (t->mm + t->extra_mm);
 
 	    if (need_mm > 0) {
 		layers[i].mm += need_mm;

@@ -343,6 +343,7 @@ preprocess()
 static double layer_transition_e;
 static double transition_e, transition_starting_e;
 static double transition_pct;
+static double ping_complete_e;
 
 static double
 extrusion_speed()
@@ -399,6 +400,52 @@ add_splice(int drive, double mm)
     splices[n_splices].drive = drive;
     splices[n_splices].mm = mm;
     n_splices++;
+}
+
+static void
+generate_pause(int ms)
+{
+    while (ms > 4000) {
+	fprintf(o, "G4 P4000\n");
+	ms -= 4000;
+    }
+    if (ms > 0) fprintf(o, "G4 P%d\n", ms);
+}
+
+static void
+move_off_tower(double x, double y)
+{
+    double new_x, new_y;
+
+    if (fabs(transition_block.x - x) < fabs(transition_block.x + transition_block.w - x)) {
+	new_x = transition_block.x - printer->nozzle;
+    } else {
+	new_x = transition_block.x + transition_block.w + printer->nozzle;
+    }
+
+    if (fabs(transition_block.y - y) < fabs(transition_block.y + transition_block.h - y)) {
+	new_y = transition_block.y - printer->nozzle;
+    } else {
+	new_y = transition_block.y + transition_block.h + printer->nozzle;
+    }
+
+    if (fabs(x  - new_x) < fabs(y - new_y)) move_to(new_x, NAN, NAN);
+    else move_to(NAN, new_y, NAN);
+}
+
+static void
+check_ping_complete(double x, double y)
+{
+    if (ping_complete_e > 0 && transition_e > ping_complete_e) {
+	fprintf(o, "; Ping extrusion complete at %f, doing second pause\n", transition_e);
+	ping_complete_e = 0;
+	do_retraction();
+	if (printer->ping_off_tower) move_off_tower(x, y);
+	generate_pause(7000);
+        if (printer->ping_off_tower) move_to(x, y, NAN);
+	undo_retraction();
+	fprintf(o, "; Resuming transition block\n");
+    }
 }
 
 typedef enum {
@@ -461,6 +508,7 @@ draw_perimeter(layer_t *l, transition_t *t)
 	double x = transition_block_corner_x(corner+i, i == 4 ? printer->nozzle / 2 : 0);
 	double y = transition_block_corner_y(corner+i, i == 4 ? printer->nozzle / 2 : 0);
         move_to_and_extrude(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
+	check_ping_complete(x, y);
 	last_x = x;
 	last_y = y;
     }
@@ -583,6 +631,7 @@ transition_fill(layer_t *l, transition_t *t)
 	    else next_xy.y += y_stride;
 	    clamp_xy_to_perimeter(l, is_y_first, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
+	    check_ping_complete(next_xy.x, next_xy.y);
 	    transition_pct = xy_to_pct(l, &next_xy);
 
 	    if (transition_pct >= 1 - EPSILON) break;
@@ -591,6 +640,7 @@ transition_fill(layer_t *l, transition_t *t)
 	    xy = next_xy;
 	    pct_to_xy(l, ! is_y_first, transition_pct, &next_xy);
 	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
+	    check_ping_complete(next_xy.x, next_xy.y);
 	    transition_pct = xy_to_pct(l, &next_xy);
 	    xy = next_xy;
 	}
@@ -625,6 +675,16 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     pct_to_xy(l, 0, transition_pct, &start_xy);  // TODO: alternate corners
     move_to(start_xy.x, start_xy.y, NAN);
     if (z_hop) move_to(NAN, NAN, l->z);
+
+    if (t->ping) {
+	ping_complete_e = transition_e + 20;
+	fprintf(o, "; Starting initial ping pause at %f complete at %f\n", transition_e, ping_complete_e);
+	if (printer->ping_off_tower) move_off_tower(start_xy.x, start_xy.y);
+	generate_pause(13000);
+	if (printer->ping_off_tower) move_to(start_xy.x, start_xy.y, NAN);
+    } else {
+	ping_complete_e = 0;
+    }
 
     undo_retraction();
 
