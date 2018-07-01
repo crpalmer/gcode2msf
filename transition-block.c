@@ -160,7 +160,8 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     bb_add_bb(&layer->bb, &run->bb);
 }
 
-#define PING_THRESHOLD 425
+#define PING_THRESHOLD  350
+#define PING_FORCE	3000
 
 static void
 compute_transition_tower()
@@ -173,15 +174,19 @@ compute_transition_tower()
 
     for (i = 1; i < n_runs; i++) {
 	double ping_delta;
+        double ping_at;
 
 	if (runs[i-1].t != runs[i].t) {
 	    add_transition(runs[i-1].t, runs[i].t, runs[i].z, &runs[i], &runs[i-1], &total_mm, &filament_mm);
+	    ping_at = PING_THRESHOLD;
 	} else if (runs[i-1].z != runs[i].z && (n_layers == 0 || layers[n_layers-1].z != runs[i-1].z)) {
 	    add_transition(runs[i-1].t, runs[i-1].t, runs[i-1].z, &runs[i-1], &runs[i-1], &total_mm, &filament_mm);
+	    ping_at = PING_FORCE;
 	}
 
 	ping_delta = total_mm - last_ping_at;
-        if (ping_delta > PING_THRESHOLD || (i+1 < n_runs && ping_delta+runs[i+1].e > PING_THRESHOLD*2)) {
+
+        if (ping_delta > ping_at) {
 	    last_ping_at = total_mm;
 	    transitions[n_transitions-1].ping = 1;
 	}
