@@ -395,10 +395,11 @@ undo_retraction()
 }
 
 static void
-add_splice(int drive, double mm)
+add_splice(int drive, double mm, double waste)
 {
     splices[n_splices].drive = drive;
     splices[n_splices].mm = mm;
+    splices[n_splices].waste = waste;
     n_splices++;
 }
 
@@ -657,11 +658,16 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 {
     double original_e;
     double actual_e;
+    double waste;
     xy_t start_xy;
 
     original_e = transition_e = last_e;
 
-    if (t->from != t->to) add_splice(t->from, *total_e + t->mm * printer->transition_target + t->extra_mm);
+    waste =  t->mm * printer->transition_target + t->extra_mm;
+    if (t->from != t->to) {
+	if (n_splices > 0) splices[n_splices-1].waste += (1-printer->transition_target) * t->mm;
+	add_splice(t->from, *total_e + waste, waste);
+    }
 
     fprintf(o, "; Transition: %d->%d with %f + %f mm\n", t->from, t->to, t->mm, t->extra_mm);
     // assume retraction was done just before tool change: do_retraction();
@@ -783,7 +789,7 @@ produce_gcode()
 	    break;
 	case DONE:
 	    total_e += printer->bowden_len > 0 ? printer->bowden_len : EXTRA_FILAMENT;
-	    add_splice(tool, total_e);
+	    add_splice(tool, total_e, 0);
 	    return;
 	}
     }

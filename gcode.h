@@ -17,6 +17,7 @@ typedef struct {
 typedef struct {
     int drive;
     double mm;
+    double waste;
 } splice_t;
 
 typedef struct {

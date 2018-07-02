@@ -211,6 +211,23 @@ produce_msf(const char *fname)
     produce_msf_splice_configurations(o);
 }
 
+static void
+output_material_usage()
+{
+    double used[N_DRIVES] = {0, };
+    double waste[N_DRIVES] = { 0, };
+    double last = 0;
+    int i;
+
+    for (i = 0; i < n_splices; i++) {
+	used[splices[i].drive] += splices[i].mm - last;
+	waste[splices[i].drive] += splices[i].waste;
+	last = splices[i].mm;
+    }
+    for (i = 0; i < N_DRIVES; i++) {
+	if (used[i]) printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)\n", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
+    }
+}
 static void process(const char *fname)
 {
     gcode_to_runs(fname);
@@ -218,6 +235,7 @@ static void process(const char *fname)
     gcode_to_msf_gcode("/tmp/gcode");
     produce_msf("/tmp/msf");
     if (summary) output_summary();
+    else output_material_usage();
 }
 
 int main(int argc, char **argv)
