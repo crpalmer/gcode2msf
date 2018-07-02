@@ -206,7 +206,7 @@ get_next_token()
 	case SET_E: printf("SET_E %f\n", t.x.e); break;
 	case START: printf("START\n"); break;
 	case TOOL: printf("TOOL %d\n", t.x.tool); break;
-	case OTHER: break;
+	case OTHER: printf("%s", buf); break;
 	default: printf("*** UNKNOWN TOKEN ****\n");
         }
     }
