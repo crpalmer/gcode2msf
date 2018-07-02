@@ -459,8 +459,8 @@ layer_to_corner(layer_t *l)
     switch(l->num % 4) {
     case 0: return BOTTOM_LEFT;
     case 1: return TOP_LEFT;
-    case 2: return BOTTOM_RIGHT;
-    case 3: return TOP_RIGHT;
+    case 2: return TOP_RIGHT;
+    case 3: return BOTTOM_RIGHT;
     }
 }
 
