@@ -684,7 +684,11 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 
     if (t->ping) {
 	ping_complete_e = transition_e + 20;
-	fprintf(o, "; Starting initial ping pause at %f complete at %f\n", transition_e, ping_complete_e);
+
+	pings[n_pings].mm = *total_e;
+	n_pings++;
+
+	fprintf(o, "; Starting initial ping pause at %f complete at %f\n", *total_e, ping_complete_e);
 	if (printer->ping_off_tower) move_off_tower(start_xy.x, start_xy.y);
 	generate_pause(13000);
 	if (printer->ping_off_tower) move_to(start_xy.x, start_xy.y, NAN);
@@ -708,12 +712,6 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     move_to(last_x, last_y, NAN);
     if (z_hop) move_to(NAN, NAN, last_z);
     // assume unretraction will done just immediately after tool change: undo_retraction();
-
-    if (t->ping) {
-	// TODO: actually report the correct extrusion for the ping
-	pings[n_pings].mm = *total_e + actual_e;
-	n_pings++;
-    }
 
     fprintf(o, "G92 E%f\n", original_e);
     fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->mm, t->extra_mm);
