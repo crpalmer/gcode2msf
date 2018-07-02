@@ -100,12 +100,12 @@ produce_msf_colours(FILE *o)
 	if (used_tool[i]) {
 	    active_material_t *m = get_active_material(i);
 	    const char *c = m->colour;
-	    fprintf(o, "%d%s%s%s", m->m->id+1, c ? c : "", c ? " " : "", m->m->type);
+	    fprintf(o, "%d %s%s%s", m->m->id+1, c ? c : "", c ? " " : "", m->m->type);
 	} else {
 	    fprintf(o, "0");
 	}
     }
-    fprintf(o, "\n");
+    fprintf(o, ";\r\n");
 }
 
 static void
@@ -115,7 +115,7 @@ produce_msf_splices(FILE *o)
     char buf[20];
 
     for (i = 0; i < n_splices; i++) {
-	 fprintf(o, "(%02x,%s)\n", splices[i].drive, float_to_hex(splices[i].mm, buf));
+	 fprintf(o, "(%02x,%s)\r\n", splices[i].drive, float_to_hex(splices[i].mm, buf));
     }
 }
 
@@ -126,7 +126,7 @@ produce_msf_pings(FILE *o)
     char buf[20];
 
     for (i = 0; i < n_pings; i++) {
-	fprintf(o, "(64,%s)\n", float_to_hex(pings[i].mm, buf));
+	fprintf(o, "(64,%s)\r\n", float_to_hex(pings[i].mm, buf));
     }
 }
 
@@ -141,7 +141,7 @@ produce_msf_splice_configuration(FILE *o, int id1, int id2)
 	int incoming = dir ? id1 : id2;
 	int outgoing = dir ? id2 : id1;
 	material_splice_t *splice = materials_find_splice(incoming, outgoing);
-	fprintf(o, "(%d%d,%s,%s,%d)\n", incoming+1, outgoing+1, float_to_hex(splice->heat, buf1), float_to_hex(splice->compression, buf2), splice->reverse);
+	fprintf(o, "(%d%d,%s,%s,%d)\r\n", incoming+1, outgoing+1, float_to_hex(splice->heat, buf1), float_to_hex(splice->compression, buf2), splice->reverse);
     }
 }
 
@@ -197,14 +197,14 @@ produce_msf(const char *fname)
 	return;
     }
 
-    fprintf(o, "MSF1.4\n");
+    fprintf(o, "MSF1.4\r\n");
     produce_msf_colours(o);
-    fprintf(o, "ppm:%s\n", float_to_hex(printer->pv / printer->calibration_len, buf));
-    fprintf(o, "lo:%04x\n", printer->loading_offset);
-    fprintf(o, "ns:%04x\n", n_splices);
-    fprintf(o, "np:%04x\n", n_pings);
-    fprintf(o, "nh:0000\n");
-    fprintf(o, "na:%04x\n", msf_splice_configurations_n());
+    fprintf(o, "ppm:%s\r\n", float_to_hex(printer->pv / printer->calibration_len, buf));
+    fprintf(o, "lo:%04x\r\n", printer->loading_offset);
+    fprintf(o, "ns:%04x\r\n", n_splices);
+    fprintf(o, "np:%04x\r\n", n_pings);
+    fprintf(o, "nh:0000\r\n");
+    fprintf(o, "na:%04x\r\n", msf_splice_configurations_n());
     // TODO na:
     produce_msf_splices(o);
     produce_msf_pings(o);
