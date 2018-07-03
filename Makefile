@@ -1,4 +1,6 @@
-all:	gcode2msf msf2text
+EXECS =gcode2msf msf2text
+
+all:	$(EXECS)
 
 GCODE2MSF_OBJS = \
 	bb.o \
@@ -14,13 +16,14 @@ CFLAGS=-g
 gcode2msf: $(GCODE2MSF_OBJS)
 	$(CC) $(GCODE2MSF_OBJS) -o gcode2msf -lm -lyaml
 
-bb.o: bb.h
-gcode.o: gcode.h
-gcode.h: bb.h
-gcode2msf.o: bb.h gcode.h materials.h printer.h transition-block.h
-materials.o: materials.h yaml-wrapper.h
-transition-block.o: transition-block.h bb.h gcode.h
-printer.o: printer.h yaml-wrapper.h
+msf2text: msf2text.o
+	$(CC) msf2text.o -o msf2text -lm
 
-msf2text: msf2text.c
-	$(CC) msf2text.c -o msf2text -lm
+# compile and generate dependency info
+%.o: %.c
+	@echo "Building: $*.c"
+	@gcc -c $(CFLAGS) $*.c -o $*.o
+	@gcc -MM $(CFLAGS) $*.c > $*.d
+
+clean:
+	-rm *.o *.d $(EXECS)
