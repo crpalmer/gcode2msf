@@ -15,7 +15,7 @@ transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
 transition_block_t transition_block;
 
-#define MIN_FIRST_SPLICE_LEN	140
+#define MIN_FIRST_SPLICE_LEN	141	/* There appears to be some epsilon error with 140 causing it to error */
 #define MIN_SPLICE_LEN		 80
 #define MIN_PING_LEN		 22	/* Really 20, but give a little slack for pinging off tower */
 #define DENSITY_FOR_PERIMETER	0.2
