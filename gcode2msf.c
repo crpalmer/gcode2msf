@@ -257,12 +257,27 @@ int main(int argc, char **argv)
 		set_active_material(atoi(&argv[1][2])-1, argv[2], NULL, UNKNOWN);
 		argc--;
 		argv++;
+	    } else if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 's' && isdigit(argv[1][2]) && argv[1][3] == '\0') {
+		colour_strength_t s;
+
+		if (strcasecmp(argv[2], "weak") == 0) s = WEAK;
+		else if (strcasecmp(argv[2], "medium") == 0) s = MEDIUM;
+		else if (strcasecmp(argv[2], "strong") == 0) s = STRONG;
+		else {
+		    fprintf(stderr, "Invalid colour strength: %s, valid values of WEAK, MEDIUM or STRONG\n", argv[2]);
+		    goto usage;
+		}
+
+		set_active_material(atoi(&argv[1][2])-1, NULL, NULL, s);
+		argc--;
+		argv++;
 	    } else if (argv[1][0] == '-') {
 		fprintf(stderr, "unknown argument: %s\n", argv[1]);
 usage:
-		fprintf(stderr, "usage: [--trace | --summary | <colour> | <material>] printer.yml gcode.gcode\n");
+		fprintf(stderr, "usage: [--trace | --summary | <colour> | <material> | <strength>] printer.yml gcode.gcode\n");
 		fprintf(stderr, "  <colour>:   -cX colour to set the colour of drive \"X\" to \"colour\"\n");
 		fprintf(stderr, "  <material>: -mX material to set the material of drive \"X\" to \"material\"\n");
+		fprintf(stderr, "  <strength>: -sX strength to set the strength of the material's colour (WEAK, MEDIUM or STRONG)\n");
 		exit(0);
 	    } else {
 		break;
