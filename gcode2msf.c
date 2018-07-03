@@ -220,13 +220,18 @@ output_material_usage_and_transition_block()
     double last = 0;
     int i;
 
-    fprintf(stderr, "transition block: (%.2f, %.2f) x (%.2f, %.2f)\n", transition_block.x, transition_block.y, transition_block.w, transition_block.h);
+    fprintf(stderr, "transition block:  (%.2f, %.2f) x (%.2f, %.2f)\n", transition_block.x, transition_block.y, transition_block.w, transition_block.h);
+    fprintf(stderr, "transition layers: %d\n", n_transitions);
+    fprintf(stderr, "number of splices: %d\n", n_splices);
+    fprintf(stderr, "number of pings:   %d\n", n_pings);
 
     for (i = 0; i < n_splices; i++) {
 	used[splices[i].drive] += splices[i].mm - last;
 	waste[splices[i].drive] += splices[i].waste;
 	last = splices[i].mm;
     }
+
+    fprintf(stderr, "\nFilament usage:\n");
     for (i = 0; i < N_DRIVES; i++) {
 	if (used[i]) printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)\n", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
     }
