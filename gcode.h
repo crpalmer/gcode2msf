@@ -11,6 +11,7 @@ typedef struct {
     double z;
     double e;
     int    t;
+    double trailing_infill_mm, leading_support_mm;
     int    pre_transition, post_transition;
 } run_t;
 

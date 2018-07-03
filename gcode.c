@@ -38,6 +38,9 @@ typedef struct {
     long pos;
 } token_t;
 
+typedef enum { NORMAL = 0, INFILL, SUPPORT } path_t;
+const char *path_names[3] = { "normal", "infill", "support" };
+
 static FILE *f, *o;
 
 static char buf[1024*1024];
@@ -47,6 +50,9 @@ int gcode_trace = 0;
 int validate_only = 0;
 
 static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
+static path_t last_e_path = NORMAL, cur_path = NORMAL;
+static double total_e = 0;
 static bb_t bb;
 static int tool = 0;
 static int seen_tool = 0;
@@ -140,6 +146,25 @@ check_for_gcode_params()
     }
 }
 
+static void
+check_for_kisslicer_path_types()
+{
+    const char *p;
+    double feed, head;
+
+    if (STRNCMP(buf, "; '") != 0) return;
+    if ((p = strchr(buf+3, '\'')) == NULL) return;
+    if (sscanf(p, "', %lf [feed mm/s], %lf [head mm/s]", &feed, &head) != 2) return;
+
+    /* Ignore destrings */
+    if (STRNCMP(buf, "; 'Destring/Wipe/Jump Path'") == 0) return;
+
+    if (STRNCMP(buf, "; 'Support (may Stack) Path'") == 0) cur_path = SUPPORT;
+    else if (STRNCMP(buf, "; 'Sparse Infill Path'") == 0) cur_path = INFILL;
+    else if (STRNCMP(buf, "; 'Stacked Sparse Infill Path'") == 0) cur_path = INFILL;
+    else cur_path = NORMAL;
+}
+
 static token_t
 get_next_token_wrapped()
 {
@@ -184,6 +209,7 @@ get_next_token_wrapped()
 	    return t;
 	}
 	check_for_gcode_params();
+	check_for_kisslicer_path_types();
 	t.t = OTHER;
 	return t;
     }
@@ -199,7 +225,7 @@ get_next_token()
     if (gcode_trace) {
 	printf("%8ld ", t.pos);
 	switch (t.t) {
-	case MOVE: printf("MOVE (%f,%f,%f) e=%f\n", t.x.move.x, t.x.move.y, t.x.move.z, t.x.move.e); break;
+	case MOVE: printf("MOVE (%f,%f,%f) e=%f total_e=%f path=%s\n", t.x.move.x, t.x.move.y, t.x.move.z, t.x.move.e, total_e, path_names[cur_path]); break;
 	case START_TOWER: printf("START_TOWER\n"); break;
 	case END_TOWER: printf("END_TOWER\n"); break;
 	case PING: printf("PING %d.%d\n", t.x.ping.num, t.x.ping.step); break;
@@ -226,6 +252,7 @@ reset_state()
     acc_e = 0;
     seen_ping = 0;
     bb_init(&bb);
+    support_start_e = support_end_e = infill_start_e = NAN;
 }
 
 static void
@@ -261,6 +288,9 @@ add_run()
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
+	runs[n_runs].trailing_infill_mm = isfinite(infill_start_e) ? total_e - infill_start_e : 0;
+	if (isfinite(support_start_e) && ! isfinite(support_end_e)) support_end_e = total_e;
+	runs[n_runs].leading_support_mm = isfinite(support_start_e) ? support_end_e - support_start_e : 0;
 	runs[n_runs].pre_transition = -1;
 	runs[n_runs].post_transition = -1;
 	n_runs++;
@@ -282,9 +312,42 @@ preprocess()
 		    show_extrusion('+', 0);
 		}
 		last_e_z = t.x.move.z;
+		last_e_path = cur_path;
 		reset_state();
+		if (cur_path == SUPPORT) {
+		    if (gcode_trace) printf("=== starting support at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    support_start_e = total_e;
+		    support_end_e = NAN;
+		}
+		if (cur_path == INFILL) {
+		    if (gcode_trace) printf("=== starting infill at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    infill_start_e = total_e;
+		}
+	    } else if (t.x.move.e != last_e) {
+	        if (last_e_path == SUPPORT && ! isfinite(support_end_e) && cur_path != SUPPORT) {
+		    if (gcode_trace) printf("*** support end at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    support_end_e = total_e;
+		}
+
+		if (last_e_path == INFILL && cur_path != INFILL) {
+		    if (gcode_trace) printf("=== invalidating infill at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    infill_start_e = NAN;
+		}
+		if (cur_path == INFILL && ! isfinite(infill_start_e)) {
+		    if (gcode_trace) printf("=== starting infill at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    infill_start_e = total_e;
+		}
+		if (cur_path == SUPPORT && ! isfinite(support_start_e)) {
+		    if (gcode_trace) printf("=== starting support at z=%f total_e=%f\n", t.x.move.z, total_e);
+		    support_start_e = total_e;
+		}
+		last_e_path = cur_path;
 	    }
+
+	    total_e += (t.x.move.e - last_e);
+
 	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
+
 	    last_e = t.x.move.e;
 	    last_x = t.x.move.x;
 	    last_y = t.x.move.y;
