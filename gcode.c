@@ -41,6 +41,9 @@ typedef struct {
 typedef enum { NORMAL = 0, INFILL, SUPPORT } path_t;
 const char *path_names[3] = { "normal", "infill", "support" };
 
+typedef enum { KISSLICER = 0, SIMPLIFY3D } slicer_t;
+const char *slicer_names[] = { "KISSlicer", "Simplify3D" };
+
 static FILE *f, *o;
 
 static char buf[1024*1024];
@@ -79,6 +82,8 @@ static double s3d_default_speed = 0;
 static double infill_mm_per_min = 0;
 static double first_layer_mm_per_min = 0;
 
+static int slicer_votes[2] = { 0, };
+
 static double mm_per_sec_to_per_min(double mm_per_sec)
 {
     return mm_per_sec * 60;
@@ -90,24 +95,25 @@ static double s3d_speed(double pct)
 }
 
 struct {
+    slicer_t slicer;
     const char *key;
     double *value;
     double (*normalize)(double);
 } gcode_params[] = {
     /* KISSlicer */
-    { "; destring_length = ", &retract_mm, NULL },
-    { "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
-    { "; Z_lift_mm = ", &z_hop, NULL },
-    { "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
-    { "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
-    { "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
+    { KISSLICER, "; destring_length = ", &retract_mm, NULL },
+    { KISSLICER, "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
+    { KISSLICER, "; Z_lift_mm = ", &z_hop, NULL },
+    { KISSLICER, "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
+    { KISSLICER, "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
+    { KISSLICER, "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
     /* S3D */
-    { ";   extruderRetractionDistance,", &retract_mm, NULL },
-    { ";   extruderRetractionZLift,", &z_hop, NULL },
-    { ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
-    { ";   rapidXYspeed,", &travel_mm_per_min, NULL },
-    { ";   defaultSpeed,", &s3d_default_speed, NULL },
-    { ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
+    { SIMPLIFY3D, ";   extruderRetractionDistance,", &retract_mm, NULL },
+    { SIMPLIFY3D, ";   extruderRetractionZLift,", &z_hop, NULL },
+    { SIMPLIFY3D, ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
+    { SIMPLIFY3D, ";   rapidXYspeed,", &travel_mm_per_min, NULL },
+    { SIMPLIFY3D, ";   defaultSpeed,", &s3d_default_speed, NULL },
+    { SIMPLIFY3D, ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
 };
 
 #define N_GCODE_PARAMS (sizeof(gcode_params) / sizeof(gcode_params[0]))
@@ -141,6 +147,7 @@ check_for_gcode_params()
 	    double v = atof(buf + strlen(gcode_params[i].key));
 	    if (gcode_params[i].normalize) v = gcode_params[i].normalize(v);
 	    *gcode_params[i].value = v;
+	    slicer_votes[gcode_params[i].slicer]++;
 	    break;
 	}
     }
@@ -152,6 +159,8 @@ check_for_kisslicer_path_types()
     const char *p;
     double feed, head;
 
+    if (slicer_votes[KISSLICER] < slicer_votes[SIMPLIFY3D]) return;
+
     if (STRNCMP(buf, "; '") != 0) return;
     if ((p = strchr(buf+3, '\'')) == NULL) return;
     if (sscanf(p, "', %lf [feed mm/s], %lf [head mm/s]", &feed, &head) != 2) return;
@@ -162,6 +171,23 @@ check_for_kisslicer_path_types()
     if (STRNCMP(buf, "; 'Support (may Stack) Path'") == 0) cur_path = SUPPORT;
     else if (STRNCMP(buf, "; 'Sparse Infill Path'") == 0) cur_path = INFILL;
     else if (STRNCMP(buf, "; 'Stacked Sparse Infill Path'") == 0) cur_path = INFILL;
+    else cur_path = NORMAL;
+}
+
+static void
+check_for_simplify3d_path_types()
+{
+    const char *p;
+
+    if (slicer_votes[SIMPLIFY3D] < slicer_votes[KISSLICER]) return;
+
+    if (buf[0] != ';') return;
+    for (p = buf+1; *p && (isspace(*p) || islower(*p)); p++) {}
+    if (*p) return;
+
+    if (STRNCMP(buf, "; infill") == 0) cur_path = INFILL;
+    else if (STRNCMP(buf, "; support") == 0) cur_path = SUPPORT;
+    else if (STRNCMP(buf, "; dense support") == 0) cur_path = SUPPORT;
     else cur_path = NORMAL;
 }
 
@@ -210,6 +236,7 @@ get_next_token_wrapped()
 	}
 	check_for_gcode_params();
 	check_for_kisslicer_path_types();
+	check_for_simplify3d_path_types();
 	t.t = OTHER;
 	return t;
     }
