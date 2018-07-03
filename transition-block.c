@@ -14,6 +14,7 @@ int n_layers;
 transition_t transitions[MAX_RUNS];
 int n_transitions = 0;
 transition_block_t transition_block;
+int reduce_pings = 0;
 
 #define MIN_FIRST_SPLICE_LEN	141	/* There appears to be some epsilon error with 140 causing it to error */
 #define MIN_SPLICE_LEN		 80
@@ -162,7 +163,28 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *t
     bb_add_bb(&layer->bb, &run->bb);
 }
 
+/* Assumption is that as the adaptive feedback system gets cranking,
+ * it should stabilize on reasonable values.
+ * Give it 5M to get started, 5M to stabilize and then start reducing
+ * the number of pings.
+ * After long enough, really reduce them to speed up large prints.
+ */
+
 #define PING_THRESHOLD 425
+#define PING_SECOND_THRESHOLD	(PING_THRESHOLD*2)
+#define PING_SECOND_E		10000
+#define PING_THIRD_THRESHOLD	(PING_SECOND_THRESHOLD*4)
+#define PING_THIRD_E		50000
+
+static double
+get_ping_threshold(double total_mm)
+{
+    if (reduce_pings) {
+	if (total_mm >= PING_THIRD_E) return PING_THIRD_THRESHOLD;
+	if (total_mm >= PING_SECOND_E) return PING_SECOND_THRESHOLD;
+    }
+    return PING_THRESHOLD;
+}
 
 static void
 compute_transition_tower()
@@ -170,8 +192,10 @@ compute_transition_tower()
     int i;
     double total_mm, filament_mm;
     double last_ping_at = 0;
+    double ping_threshold;
 
     total_mm = filament_mm = runs[0].e;
+    ping_threshold = get_ping_threshold(total_mm);
 
     for (i = 1; i < n_runs; i++) {
 	double ping_delta;
@@ -183,9 +207,10 @@ compute_transition_tower()
 	}
 
 	ping_delta = total_mm - last_ping_at;
-        if (ping_delta > PING_THRESHOLD || (i+1 < n_runs && ping_delta+runs[i+1].e > PING_THRESHOLD*2)) {
+        if (ping_delta > ping_threshold || (i+1 < n_runs && ping_delta+runs[i+1].e > ping_threshold*2)) {
 	    last_ping_at = total_mm;
 	    transitions[n_transitions-1].ping = 1;
+	    ping_threshold = get_ping_threshold(total_mm);
 	}
 
 	total_mm += runs[i].e;
@@ -240,7 +265,7 @@ add_min_transition_lengths(double area)
 }
 
 static void
-reduce_pings()
+reduce_pings_when_no_splices()
 {
     int i, j;
 
@@ -387,7 +412,7 @@ transition_block_create_from_runs()
     compute_transition_tower();
     prune_transition_tower();
     add_min_transition_lengths(transition_block_area());
-    reduce_pings();
+    reduce_pings_when_no_splices();
     place_transition_block();
     compute_densities_and_perimeters();
 }

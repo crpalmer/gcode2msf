@@ -34,6 +34,8 @@ extern transition_t transitions[MAX_RUNS];
 extern int n_transitions;
 extern transition_block_t transition_block;
 
+extern int reduce_pings;
+
 void transition_block_size(double xy[2]);
 
 void transition_block_create_from_runs();
