@@ -11,13 +11,19 @@ GCODE2MSF_OBJS = \
 	transition-block.o \
 	yaml-wrapper.o
 
+MSF2TEXT_OBJS = msf2text.o
+
+# pull in dependency info for *existing* .o files
+OBJS = $(GCODE2MSF_OBJS) $(MSF2TEXT_OBJS)
+-include $(OBJS:.o=.d)
+
 CFLAGS=-g
 
 gcode2msf: $(GCODE2MSF_OBJS)
 	$(CC) $(GCODE2MSF_OBJS) -o gcode2msf -lm -lyaml
 
-msf2text: msf2text.o
-	$(CC) msf2text.o -o msf2text -lm
+msf2text: $(MSF2TEXT_OBJS)
+	$(CC) $(MSF2TEXT_OBJS) -o msf2text -lm
 
 # compile and generate dependency info
 %.o: %.c
