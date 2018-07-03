@@ -212,12 +212,14 @@ produce_msf(const char *fname)
 }
 
 static void
-output_material_usage()
+output_material_usage_and_transition_block()
 {
     double used[N_DRIVES] = {0, };
     double waste[N_DRIVES] = { 0, };
     double last = 0;
     int i;
+
+    fprintf(stderr, "transition block: (%.2f, %.2f) x (%.2f, %.2f)\n", transition_block.x, transition_block.y, transition_block.w, transition_block.h);
 
     for (i = 0; i < n_splices; i++) {
 	used[splices[i].drive] += splices[i].mm - last;
@@ -235,7 +237,7 @@ static void process(const char *fname)
     gcode_to_msf_gcode("/tmp/gcode");
     produce_msf("/tmp/msf");
     if (summary) output_summary();
-    else output_material_usage();
+    else output_material_usage_and_transition_block();
 }
 
 int main(int argc, char **argv)
