@@ -11,6 +11,7 @@
 #include "transition-block.h"
 
 static int summary = 0;
+const char *output_fname;
 
 static void
 output_summary()
@@ -230,12 +231,43 @@ output_material_usage_and_transition_block()
 	if (used[i]) printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)\n", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
     }
 }
+
+static int
+ends_with(const char *str, const char *suffix)
+{
+    int len_str = strlen(str);
+    int len_suffix = strlen(suffix);
+
+    return len_str > len_suffix && strcmp(&str[len_str - len_suffix], suffix) == 0;
+}
+
+static char *
+get_msf_fname(const char *base)
+{
+    char *fname;
+
+    fname = malloc(strlen(base) + 20);
+    strcpy(fname, base);
+    if (ends_with(fname, ".gcode")) fname[strlen(fname)-6] = '\0';
+    if (! ends_with(fname, ".msf")) strcat(fname, ".msf");
+    return fname;
+}
+
 static void process(const char *fname)
 {
+    char *msf_fname;
+    char *gcode_fname;
+
+    msf_fname = get_msf_fname(output_fname ? output_fname : fname);
+    gcode_fname = malloc(strlen(msf_fname) + 20);
+    sprintf(gcode_fname, "%s.gcode", msf_fname);
+
     gcode_to_runs(fname);
     transition_block_create_from_runs();
-    gcode_to_msf_gcode("/tmp/gcode");
-    produce_msf("/tmp/msf");
+    printf("Outputting to %s\n", msf_fname);
+
+    gcode_to_msf_gcode(gcode_fname);
+    produce_msf(msf_fname);
     if (summary) output_summary();
     else output_material_usage_and_transition_block();
 }
@@ -249,7 +281,11 @@ int main(int argc, char **argv)
 	    else if (strcmp(argv[1], "--summary") == 0) summary = 1;
 	    else if (strcmp(argv[1], "--trace") == 0) gcode_trace = 1;
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
-	    else if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 'c' && isdigit(argv[1][2]) && argv[1][3] == '\0') {
+	    else if (strcmp(argv[1], "--output") == 0 || strcmp(argv[1], "-o") == 0) {
+		output_fname = argv[2];
+		argc--;
+		argv++;
+	    } else if (argc > 2 && argv[1][0] == '-' && argv[1][1] == 'c' && isdigit(argv[1][2]) && argv[1][3] == '\0') {
 		set_active_material(atoi(&argv[1][2])-1, NULL, argv[2], UNKNOWN);
 		argc--;
 		argv++;
@@ -274,7 +310,7 @@ int main(int argc, char **argv)
 	    } else if (argv[1][0] == '-') {
 		fprintf(stderr, "unknown argument: %s\n", argv[1]);
 usage:
-		fprintf(stderr, "usage: [--trace | --summary | <colour> | <material> | <strength>] printer.yml gcode.gcode\n");
+		fprintf(stderr, "usage: [--trace | --summary | <colour> | <material> | <strength> | --output fname] printer.yml gcode.gcode\n");
 		fprintf(stderr, "  <colour>:   -cX colour to set the colour of drive \"X\" to \"colour\"\n");
 		fprintf(stderr, "  <material>: -mX material to set the material of drive \"X\" to \"material\"\n");
 		fprintf(stderr, "  <strength>: -sX strength to set the strength of the material's colour (WEAK, MEDIUM or STRONG)\n");
