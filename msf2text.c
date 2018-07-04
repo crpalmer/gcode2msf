@@ -94,7 +94,7 @@ main(int argc, char **argv)
 	} else if (STRNCMP(buf, "na:") == 0) {
 	    printf("# splice settings: %d\n", decode_hex_def(&buf[3]));
 	} else if (buf[0] == '(') {
-	    int cmd;
+	    unsigned cmd;
 
 	    if (! decode_hex(&buf[1], &cmd)) printf("ERROR in cmd %s\n", &buf[1]);
 	    else if (cmd < 4) report_drive(cmd);

@@ -16,53 +16,33 @@ const char *output_fname;
 static void
 output_summary()
 {
-    int i, j;
+    int i, j, k;
     int layer = 1;
     double last_layer_z = 0;
-    double tool_mm[N_DRIVES] = { 0, };
-    double tool_waste[N_DRIVES] = { 0, };
-    double tool_infill[N_DRIVES] = { 0, };
-    double tool_support[N_DRIVES] = { 0, };
+    double total[N_DRIVES] = { 0, };
 
     printf("Layer by layer extrusions\n");
     printf("-------------------------\n");
     for (i = 0; i < n_runs; i = j) {
+	int gap = N_DRIVES * 15 + 10;
 	printf("%5d %6.02f %6.02f", layer++, runs[i].z - last_layer_z, runs[i].z);
 	last_layer_z = runs[i].z;
 	for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
+	    total[runs[j].t] += runs[j].e;
 	    printf(" %10.2f [%d]", runs[j].e, runs[j].t);
+	    gap -= 15;
+	}
+	printf("%*c totals:", gap, ' ');
+	for (k = 0; k < N_DRIVES; k++) {
+	    printf(" %12.2f", total[k]);
 	}
 	printf("\n");
     }
-    printf("\n");
-    printf("Extruder by extruder extrusions\n");
-    printf("-------------------------------\n");
-    for (i = 0; i < n_runs; i = j) {
-	double mm = 0, waste = 0;
-	double leading_support_mm = runs[i].leading_support_mm;
-	double trailing_infill_mm = runs[i].trailing_infill_mm;
-	for (j = i; j < n_runs && runs[i].t == runs[j].t; j++) {
-	    mm += runs[j].e;
-	    waste += get_pre_transition_mm(j) + get_post_transition_mm(j);
-	    trailing_infill_mm = runs[i].trailing_infill_mm;
-	}
-	tool_mm[runs[i].t] += mm;
-	tool_waste[runs[i].t] += waste;
-	tool_infill[runs[i].t] += trailing_infill_mm;
-	tool_support[runs[i].t] += leading_support_mm;
-	printf("T%d %10.4f mm %10.4f waste %10.4f support %10.4f infill\n", runs[i].t, mm, waste, leading_support_mm, trailing_infill_mm);
-    }
     for (i = 0; i < N_DRIVES; i++) {
-	if (tool_mm[i] + tool_waste[i] != 0) printf("   TOTAL: T%d %10.2f mm %10.2f waste %10.2f support %10.2f infill\n", i, tool_mm[i], tool_waste[i], tool_support[i], tool_infill[i]);
+	if (total[i]) printf("T%d: %.2f mm\n", i, total[i]);
     }
     printf("\n");
-    double t_xy[2];
-    transition_block_size(t_xy);
-    printf("Transition block: area %f transition_block=(%f,%f)x(%f,%f)\n", t_xy[0] * t_xy[1], transition_block.x, transition_block.y, transition_block.w, transition_block.h);
-    printf("----------------\n");
-    for (i = 0; i < n_layers; i++) {
-	printf("z=%-6.2f height=%-4.2f mm=%-6.2f n-transitions=%d bb=(%f,%f),(%f,%f)\n", layers[i].z, layers[i].h, layers[i].mm, layers[i].n_transitions, BB_PRINTF_ARGS(&layers[i].bb));
-    }
+    transition_block_dump_transitions(stdout);
 }
 
 static char *
@@ -141,41 +121,41 @@ produce_msf_pings(FILE *o)
 static void
 produce_msf_splice_configuration(FILE *o, int id1, int id2)
 {
-    int dir;
     char buf1[20], buf2[20];
+    material_splice_t *splice;
 
     if (! o) return;
-    for (dir = 0; dir < (id1 == id2 ? 1 : 2); dir++) {
-	int incoming = dir ? id1 : id2;
-	int outgoing = dir ? id2 : id1;
-	material_splice_t *splice = materials_find_splice(incoming, outgoing);
-	fprintf(o, "(%d%d,%s,%s,%d)\r\n", incoming+1, outgoing+1, float_to_hex(splice->heat, buf1), float_to_hex(splice->compression, buf2), splice->reverse);
-    }
+    splice = materials_find_splice(id1, id2);
+    fprintf(o, "(%d%d,%s,%s,%d)\r\n", id1+1, id2+1, float_to_hex(splice->heat, buf1), float_to_hex(splice->compression, buf2), splice->reverse);
 }
 
 static void
 count_or_produce_splice_configurations(FILE *o, int *n_out)
 {
     int i, j;
-    int handled[N_DRIVES] = { 0, };
+    int materials[N_DRIVES];
+    int n_materials = 0;
     int n = 0;
 
     for (i = 0; i < N_DRIVES; i++) {
 	active_material_t *m = get_active_material(i);
-	if (! used_tool[i] || handled[m->m->id]) continue;
-	produce_msf_splice_configuration(o, m->m->id, m->m->id);
-	n++;
-	for (j = 0; j < N_DRIVES; j++) {
-	    active_material_t *m2 = get_active_material(j);
+	if (! used_tool[i]) continue;
+	for (j = 0; j < n_materials; j++) {
+	    if (materials[j] == m->m->id) break;
+	}
+	if (j >= n_materials) materials[n_materials++] = m->m->id;
+    }
 
-	    if (! used_tool[j] || handled[j]) continue;
-	    if (m->m->id == m2->m->id) handled[j] = 1;
-	    else {
-		produce_msf_splice_configuration(o, m->m->id, m2->m->id);
-		n++;
-	    }
+    for (i = 0; i < n_materials; i++) {
+	produce_msf_splice_configuration(o, materials[i], materials[i]);
+	n++;
+	for (j = i+1; j < n_materials; j++) {
+	    produce_msf_splice_configuration(o, materials[i], materials[j]);
+	    produce_msf_splice_configuration(o, materials[j], materials[i]);
+	    n += 2;
 	}
     }
+
     if (n_out) *n_out = n;
 }
 
@@ -224,23 +204,39 @@ output_material_usage_and_transition_block()
 {
     double used[N_DRIVES] = {0, };
     double waste[N_DRIVES] = { 0, };
+    double transition_mm[N_DRIVES] = { 0, };
+    double total_waste = 0;
+    double total_transition_mm = 0;
     double last = 0;
     int i;
 
-    fprintf(stderr, "transition block:  (%.2f, %.2f) x (%.2f, %.2f)\n", transition_block.x, transition_block.y, transition_block.w, transition_block.h);
-    fprintf(stderr, "transition layers: %d\n", n_transitions);
-    fprintf(stderr, "number of splices: %d\n", n_splices);
-    fprintf(stderr, "number of pings:   %d\n", n_pings);
+    printf("transition block:  (%.2f, %.2f) x (%.2f, %.2f)\n", transition_block.x, transition_block.y, transition_block.w, transition_block.h);
+    printf("transition layers: %d\n", n_transitions);
+    printf("number of splices: %d\n", n_splices);
+    printf("number of pings:   %d\n", n_pings);
 
     for (i = 0; i < n_splices; i++) {
-	used[splices[i].drive] += splices[i].mm - last;
-	waste[splices[i].drive] += splices[i].waste;
+	int d = splices[i].drive;
+
+	used[d] += splices[i].mm - last;
+	waste[d] += splices[i].waste;
+	transition_mm[d] += splices[i].transition_mm;
+	total_waste += splices[i].waste;
+	total_transition_mm += splices[i].transition_mm;
 	last = splices[i].mm;
     }
 
-    fprintf(stderr, "\nFilament usage:\n");
+    printf("\nFilament usage:\n");
+    if (total_waste < total_transition_mm) {
+	printf("Saved %.2f%% filament using infill & support\n", (total_transition_mm - total_waste) / total_transition_mm*100);
+    }
+
     for (i = 0; i < N_DRIVES; i++) {
-	if (used[i]) printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)\n", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
+	if (used[i]) {
+	    printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
+	    if (waste[i] < transition_mm[i]) printf(" saved %.2fmm", transition_mm[i] - waste[i]);
+	    printf("\n");
+	}
     }
 }
 
@@ -281,7 +277,7 @@ static void process(const char *fname)
     gcode_to_msf_gcode(gcode_fname);
     produce_msf(msf_fname);
     if (summary) output_summary();
-    else output_material_usage_and_transition_block();
+    output_material_usage_and_transition_block();
 }
 
 int main(int argc, char **argv)
@@ -295,7 +291,11 @@ int main(int argc, char **argv)
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
 	    else if (strcmp(argv[1], "--reduce-pings") == 0) reduce_pings = 1;
 	    else if (strcmp(argv[1], "--debug-tool-changes") == 0) debug_tool_changes = 1;
-	    else if (strcmp(argv[1], "--output") == 0 || strcmp(argv[1], "-o") == 0) {
+	    else if (argc > 2 && strcmp(argv[1], "--stop-at-ping") == 0) {
+		stop_at_ping = atoi(argv[2]);
+		argc--;
+		argv++;
+	    } else if (argc > 2 && (strcmp(argv[1], "--output") == 0 || strcmp(argv[1], "-o") == 0)) {
 		output_fname = argv[2];
 		argc--;
 		argv++;
@@ -329,9 +329,11 @@ usage:
 		fprintf(stderr, "  <material>: -mX material to set the material of drive \"X\" to \"material\"\n");
 		fprintf(stderr, "  <strength>: -sX strength to set the strength of the material's colour (WEAK, MEDIUM or STRONG)\n");
 		fprintf(stderr, "  <flags>: any number of:\n");
-		fprintf(stderr, "           --debug-tool-changes: Leave Tx in the output to visualize the tool changes [DO NOT PRINT]\n");
 		fprintf(stderr, "           --summary:      provide a more detailed summary of the print\n");
 		fprintf(stderr, "           --reduce-pings: ping less frequently as the print gets longer and longer\n");
+		fprintf(stderr, "  debugging flags not normally needed are:\n");
+		fprintf(stderr, "           --debug-tool-changes: Leave Tx in the output to visualize the tool changes [DO NOT PRINT]\n");
+		fprintf(stderr, "           --stop-at-ping x: stop producing gcode at the start of ping \"x\"\n");
 		fprintf(stderr, "           --trace:        trace the gcode as it is processed\n");
 		exit(0);
 	    } else {

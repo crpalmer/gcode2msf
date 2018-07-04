@@ -13,6 +13,8 @@ typedef struct {
     double min_transition_len;
     double early_transition_len;
     double transition_target;
+    int    transition_in_infill;
+    int    transition_in_support;
     double print_speed;
     double min_density;
     double perimeter_speed;

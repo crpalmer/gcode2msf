@@ -17,8 +17,6 @@ static int n_material_splices;
 
 static active_material_t active_materials[N_DRIVES];
 
-static char buf[100*1024];
-
 static struct {
     const char *colour;
     colour_strength_t strength;
@@ -77,8 +75,8 @@ process_combination(yaml_wrapper_t *p, material_splice_t *splice)
 	}
 	if (event.type == YAML_SCALAR_EVENT && yaml_wrapper_event(p, &event2)) {
 	    if (event2.type == YAML_SCALAR_EVENT) {
-		const char *key = event.data.scalar.value;
-		const char *value = event2.data.scalar.value;
+		const char *key = (char *) event.data.scalar.value;
+		const char *value = (char *) event2.data.scalar.value;
 
 		if (strcmp(key, "heatFactor") == 0) splice->heat = atof(value);
 		else if (strcmp(key, "compressionFactor") == 0) splice->compression = atof(value);
@@ -102,7 +100,7 @@ process_combinations(yaml_wrapper_t *p, material_t *incoming)
 	    break;
 	}
 	if (event.type == YAML_SCALAR_EVENT) {
-	    outgoing = find_or_create_material(event.data.scalar.value);
+	    outgoing = find_or_create_material((char *) event.data.scalar.value);
 	    process_combination(p, find_or_create_splice(incoming, outgoing));
 	}
 	yaml_event_delete(&event);
@@ -117,14 +115,16 @@ process_material(yaml_wrapper_t *p, material_t *m)
     for (;;) {
 	if (! yaml_wrapper_event(p, &event)) break;
 	if (event.type == YAML_SCALAR_EVENT) {
-	    if (strcmp(event.data.scalar.value, "type") == 0) {
+	    const char *value = (char *) event.data.scalar.value;
+
+	    if (strcmp(value, "type") == 0) {
 		if (! yaml_wrapper_event(p, &event2)) {
 		    yaml_event_delete(&event);
 		    break;
 		}
-		m->type = strdup(event2.data.scalar.value);
+		m->type = strdup((char *) event2.data.scalar.value);
 		yaml_event_delete(&event2);
-	    } else if (strcmp(event.data.scalar.value, "combinations") == 0) {
+	    } else if (strcmp(value, "combinations") == 0) {
 		if (! yaml_wrapper_event(p, &event2)) {
 		    yaml_event_delete(&event);
 		    break;
@@ -165,7 +165,7 @@ materials_load(const char *fname)
 
     while (yaml_wrapper_event(p, &event)) {
 	if (event.type == YAML_SCALAR_EVENT) {
-	    material_t *m = find_or_create_material(event.data.scalar.value);
+	    material_t *m = find_or_create_material((char *) event.data.scalar.value);
 	    process_material(p, m);
 	}
 	yaml_event_delete(&event);

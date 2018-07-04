@@ -11,6 +11,7 @@ typedef struct {
     double z;
     double e;
     int    t;
+    long   offset;
     double trailing_infill_mm, leading_support_mm;
     int    pre_transition, post_transition;
 } run_t;
@@ -19,6 +20,7 @@ typedef struct {
     int drive;
     double mm;
     double waste;
+    double transition_mm;
 } splice_t;
 
 typedef struct {
@@ -38,6 +40,7 @@ extern int extrusions;
 extern int gcode_trace;
 extern int validate_only;
 extern int debug_tool_changes;
+extern int stop_at_ping;
 
 void gcode_to_runs(const char *fname);
 void gcode_to_msf_gcode(const char *output_fname);

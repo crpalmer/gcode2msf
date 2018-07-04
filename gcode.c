@@ -9,8 +9,6 @@
 #include "printer.h"
 #include "transition-block.h"
 
-#define EXTRA_FILAMENT	75
-
 #define EPSILON 0.0000001
 
 typedef struct {
@@ -44,6 +42,12 @@ const char *path_names[3] = { "normal", "infill", "support" };
 typedef enum { KISSLICER = 0, SIMPLIFY3D } slicer_t;
 const char *slicer_names[] = { "KISSlicer", "Simplify3D" };
 
+typedef struct {
+    double total_e;
+    double acc_transition;
+    double acc_waste;
+} extrusion_state_t;
+
 static FILE *f, *o;
 
 static char buf[1024*1024];
@@ -52,6 +56,7 @@ int extrusions = 0;
 int gcode_trace = 0;
 int validate_only = 0;
 int debug_tool_changes = 0;
+int stop_at_ping = -1;
 
 static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
@@ -134,6 +139,7 @@ find_arg(const char *buf, char arg, double *val)
 	     return 0;
 	}
     }
+    return 0;
 }
 
 static void
@@ -192,13 +198,23 @@ check_for_simplify3d_path_types()
     else cur_path = NORMAL;
 }
 
+static long next_pos = 0;
+
+static void
+rewind_input()
+{
+    rewind(f);
+    next_pos = 0;
+}
+
 static token_t
 get_next_token_wrapped()
 {
     token_t t;
 
     while (fgets(buf, sizeof(buf), f) != NULL) {
-	t.pos = ftell(f);
+	t.pos = next_pos;
+	next_pos = ftell(f);
 	if (STRNCMP(buf, "G1 ") == 0) {
 	    t.t = MOVE;
 	    if (! find_arg(buf, 'X', &t.x.move.x)) t.x.move.x = last_x;
@@ -246,6 +262,15 @@ get_next_token_wrapped()
     return t;
 }
 
+static void
+update_last_state(token_t *t)
+{
+    last_e = t->x.move.e;
+    last_x = t->x.move.x;
+    last_y = t->x.move.y;
+    last_z = t->x.move.z;
+}
+
 static token_t
 get_next_token()
 {
@@ -267,10 +292,17 @@ get_next_token()
     return t;
 }
 
+static double accumulated_e()
+{
+    return last_e - start_e;
+}
+
 static void
 accumulate()
 {
-    acc_e += (last_e - start_e);
+    double delta_e = accumulated_e();
+    acc_e += delta_e;
+    total_e += delta_e;
 }
 
 static void
@@ -304,7 +336,7 @@ show_extrusion(char chr, int force)
 }
 
 static void
-add_run()
+add_run(long offset)
 {
     if (acc_e != 0) {
 	if (! used_tool[tool]) {
@@ -316,6 +348,7 @@ add_run()
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
+	runs[n_runs].offset = offset;
 	runs[n_runs].trailing_infill_mm = isfinite(infill_start_e) ? total_e - infill_start_e : 0;
 	if (isfinite(support_start_e) && ! isfinite(support_end_e)) support_end_e = total_e;
 	runs[n_runs].leading_support_mm = isfinite(support_start_e) ? support_end_e - support_start_e : 0;
@@ -328,6 +361,8 @@ add_run()
 static void
 preprocess()
 {
+    long after_last_e_offset = 0;
+
     reset_state();
     while (1) {
 	token_t t = get_next_token();
@@ -336,7 +371,7 @@ preprocess()
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
 		if (started) {
-		    add_run();
+		    add_run(after_last_e_offset);
 		    show_extrusion('+', 0);
 		}
 		last_e_z = t.x.move.z;
@@ -354,32 +389,29 @@ preprocess()
 	    } else if (t.x.move.e != last_e) {
 	        if (last_e_path == SUPPORT && ! isfinite(support_end_e) && cur_path != SUPPORT) {
 		    if (gcode_trace) printf("*** support end at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    support_end_e = total_e;
+		    support_end_e = total_e + accumulated_e();
 		}
 
 		if (last_e_path == INFILL && cur_path != INFILL) {
 		    if (gcode_trace) printf("=== invalidating infill at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    infill_start_e = NAN;
+		    infill_start_e = NAN + accumulated_e();
 		}
 		if (cur_path == INFILL && ! isfinite(infill_start_e)) {
 		    if (gcode_trace) printf("=== starting infill at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    infill_start_e = total_e;
+		    infill_start_e = total_e + accumulated_e();
 		}
 		if (cur_path == SUPPORT && ! isfinite(support_start_e)) {
 		    if (gcode_trace) printf("=== starting support at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    support_start_e = total_e;
+		    support_start_e = total_e + accumulated_e();
 		}
 		last_e_path = cur_path;
 	    }
 
-	    total_e += (t.x.move.e - last_e);
+	    if (t.x.move.e != last_e) after_last_e_offset = ftell(f);
 
 	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
 
-	    last_e = t.x.move.e;
-	    last_x = t.x.move.x;
-	    last_y = t.x.move.y;
-	    last_z = t.x.move.z;
+	    update_last_state(&t);
 	    break;
 	case START_TOWER:
 	    accumulate();
@@ -407,7 +439,7 @@ preprocess()
 		    exit(1);
 		}
 		accumulate();
-		add_run();
+		add_run(t.pos);
 		if (validate_only && acc_e == 0) printf("Z %.02f ******* Tool change with no extrusion, chroma may screw this up\n", last_z);
 		show_extrusion('+', 0);
 		reset_state();
@@ -444,6 +476,7 @@ extrusion_speed()
 
     if (infill_mm_per_min > 0) return infill_mm_per_min;
     if (printer->print_speed > 0) return printer->print_speed;
+    return 30;
 }
 
 static void
@@ -486,12 +519,15 @@ undo_retraction()
 }
 
 static void
-add_splice(int drive, double mm, double waste)
+add_splice(int drive, double mm, double pre_mm, extrusion_state_t *e)
 {
     splices[n_splices].drive = drive;
-    splices[n_splices].mm = mm;
-    splices[n_splices].waste = waste;
+    splices[n_splices].mm = mm + pre_mm;
+    splices[n_splices].waste = e->acc_waste + pre_mm;
+    splices[n_splices].transition_mm = e->acc_transition + pre_mm;
     n_splices++;
+
+    e->acc_waste = e->acc_transition = -pre_mm;
 }
 
 static void
@@ -553,6 +589,7 @@ layer_to_corner(layer_t *l)
     case 2: return TOP_RIGHT;
     case 3: return BOTTOM_RIGHT;
     }
+    assert(0);
 }
 
 static double
@@ -565,6 +602,7 @@ transition_block_corner_x(int corner, double early)
     case 2: return transition_block.x + transition_block.w;
     case 3: return transition_block.x + early;
     }
+    assert(0);
 }
 
 static double
@@ -577,6 +615,7 @@ transition_block_corner_y(int corner, double early)
     case 2: return transition_block.y + transition_block.h - early;
     case 3: return transition_block.y + transition_block.h;
     }
+    assert(0);
 }
 
 static double
@@ -713,7 +752,7 @@ transition_fill(layer_t *l, transition_t *t)
     if (corner == TOP_LEFT || corner == TOP_RIGHT) y_stride = -y_stride;
 
     pct_to_xy(l, 0, transition_pct, &xy);
-    while ((is_last || transition_e - transition_starting_e < t->mm + t->extra_mm) && transition_pct < 1 - EPSILON) {
+    while ((is_last || transition_e - transition_starting_e < t->pre_mm + t->post_mm) && transition_pct < 1 - EPSILON) {
 	int is_y_first;
 
 	for (is_y_first = 0; is_y_first < 2 && transition_pct < 1 - EPSILON; is_y_first++) {
@@ -745,22 +784,24 @@ transition_fill(layer_t *l, transition_t *t)
 }
 
 static void
-generate_transition(layer_t *l, transition_t *t, double *total_e)
+generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 {
     double original_e;
     double actual_e;
-    double waste;
     xy_t start_xy;
+    double start_total_e;
 
-    original_e = transition_e = last_e;
+    original_e = last_e;
 
-    waste =  t->mm * printer->transition_target + t->extra_mm;
+    start_total_e = e->total_e + t->mm_from_runs;
+
+    fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
+
     if (t->from != t->to) {
-	if (n_splices > 0) splices[n_splices-1].waste += (1-printer->transition_target) * t->mm;
-	add_splice(t->from, *total_e + waste, waste);
+	e->total_e += t->mm_from_runs;
+	add_splice(t->from, e->total_e, t->pre_mm, e);
     }
 
-    fprintf(o, "; Transition: %d->%d with %f + %f mm\n", t->from, t->to, t->mm, t->extra_mm);
     // assume retraction was done just before tool change: do_retraction();
     move_to(NAN, NAN, l->z + z_hop);
 
@@ -776,10 +817,14 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     if (t->ping) {
 	ping_complete_e = transition_e + 20;
 
-	pings[n_pings].mm = *total_e;
+	pings[n_pings].mm = start_total_e;
 	n_pings++;
 
-	fprintf(o, "; Starting initial ping pause at %f complete at %f\n", *total_e, ping_complete_e);
+	fprintf(o, "; Starting initial ping pause at %f complete at %f (from %f)\n", pings[n_pings-1].mm, ping_complete_e, transition_e);
+	if (stop_at_ping == n_pings) {
+		fclose(o);
+		exit(0);
+	}
 	if (printer->ping_off_tower) move_off_tower(start_xy.x, start_xy.y);
 	generate_pause(13000);
 	if (printer->ping_off_tower) move_to(start_xy.x, start_xy.y, NAN);
@@ -789,12 +834,9 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
 
     undo_retraction();
 
-    transition_starting_e = transition_e;
-
+    transition_e = transition_starting_e = last_e;
     if (l->transition0 == t->num && l->use_perimeter) draw_perimeter(l, t);
-
     transition_fill(l, t);
-
     actual_e = transition_e - transition_starting_e;
 
     do_retraction();
@@ -805,13 +847,15 @@ generate_transition(layer_t *l, transition_t *t, double *total_e)
     // assume unretraction will done just immediately after tool change: undo_retraction();
 
     fprintf(o, "G92 E%f\n", original_e);
-    fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->mm, t->extra_mm);
+    fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->pre_mm, t->post_mm);
 
-    *total_e += actual_e;
+    e->acc_transition  += t->infill_mm + t->pre_mm + t->post_mm + t->support_mm;
+    e->acc_transition  += actual_e - (t->pre_mm + t->post_mm);
+    e->acc_waste       += actual_e;
+    e->total_e         += actual_e;
     layer_transition_e += actual_e;
 
     assert(t->num != l->transition0 + l->n_transitions - 1 || fabs(transition_pct - 1) < 0.001);
-    assert(t->num != l->transition0 + l->n_transitions - 1 || l->mm - 1 <= layer_transition_e <= l->mm+5);
 }
 
 static void
@@ -819,68 +863,42 @@ produce_gcode()
 {
     int l = 0;
     int t = 0;
-    double last_e_z = 0, last_e_tool;
-    int seen_tool = 0;
-    int tool = 0;
-    int started = 0;
-    double total_e;
+    extrusion_state_t e = { 0, 0, 0 };
 
     last_e = last_x = last_y = last_z = 0;
 
-    rewind(f);
+    rewind_input();
     while (1) {
 	token_t token = get_next_token();
 
-	switch(token.t) {
-	case MOVE: {
-	    int may_need_transition = 0;
-
-	    if (tool != last_e_tool) may_need_transition = 1;
-	    if (token.x.move.z != last_e_z && layers[l].n_transitions == 1 && transitions[t].from == transitions[t].to) may_need_transition = 1;
-
-	    if (t < n_transitions && started && token.x.move.e != last_e && may_need_transition) {
-		last_e_z = token.x.move.z;
-		last_e_tool = tool;
-		generate_transition(&layers[l], &transitions[t], &total_e);
-		assert(token.x.move.z == layers[l].z);
-		t++;
-		if (layers[l].transition0 + layers[l].n_transitions == t) l++;
-		assert(layers[l].transition0 <= t && t < layers[l].transition0 + layers[l].n_transitions);
-	    }
-	    total_e += token.x.move.e - last_e;
-	    last_e = token.x.move.e;
-	    last_x = token.x.move.x;
-	    last_y = token.x.move.y;
-	    last_z = token.x.move.z;
-	    fprintf(o, "%s", buf);
-	    break;
+	if (t < n_transitions && token.pos >= transitions[t].offset) {
+	    generate_transition(&layers[l], &transitions[t], &e);
+	    t++;
+	    if (layers[l].transition0 + layers[l].n_transitions == t) l++;
+	    assert(l >= n_layers || (layers[l].transition0 <= t && t < layers[l].transition0 + layers[l].n_transitions));
 	}
-	case START:
-	    started = 1;
-	    break;
-	case START_TOWER:
-	case END_TOWER:
-	case PING:
-	case OTHER:
-	    fprintf(o, "%s", buf);
-	    break;
-	case SET_E:
-	    last_e = 0;
+
+	switch(token.t) {
+	case MOVE:
+	    //assert(t == 0 || l >= n_layers || token.x.move.e == last_e || token.x.move.z == layers[l].z);
+	    update_last_state(&token);
 	    fprintf(o, "%s", buf);
 	    break;
 	case TOOL:
-	    if (! seen_tool) {
-		seen_tool = 1;
-		last_e_tool = token.x.tool;
-	    }
-	    tool = token.x.tool;
-	    fprintf(o, "; Switching to tool %d\n", tool);
+	    fprintf(o, "; Switching to tool %d\n", token.x.tool);
 	    if (debug_tool_changes) fprintf(o, "T%d\n", token.x.tool);
 	    break;
 	case DONE:
-	    total_e += printer->bowden_len > 0 ? printer->bowden_len : EXTRA_FILAMENT;
-	    add_splice(tool, total_e, 0);
+	    e.total_e += transition_final_mm + transition_final_waste;
+	    add_splice(tool, e.total_e, 0, &e);
+	    splices[n_splices-1].waste += transition_final_waste;
 	    return;
+	case SET_E:
+	    last_e = token.x.e;
+	    /* fall through */
+	default:
+	    fprintf(o, "%s", buf);
+	    break;
 	}
     }
 }

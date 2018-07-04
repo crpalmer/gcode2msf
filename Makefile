@@ -17,7 +17,7 @@ MSF2TEXT_OBJS = msf2text.o
 OBJS = $(GCODE2MSF_OBJS) $(MSF2TEXT_OBJS)
 -include $(OBJS:.o=.d)
 
-CFLAGS=-g
+CFLAGS=-g -Wall -Werror
 
 gcode2msf: $(GCODE2MSF_OBJS)
 	$(CC) $(GCODE2MSF_OBJS) -o gcode2msf -lm -lyaml

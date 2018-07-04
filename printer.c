@@ -7,7 +7,7 @@
 
 static struct {
     const char *key;
-    int offset;
+    size_t offset;
     enum { BOOLEAN, DOUBLE, INT, STRING } type;
     int max_depth;
 } keys[] = {
@@ -23,6 +23,8 @@ static struct {
     { "minPurgeLength", offsetof(printer_t, min_transition_len), DOUBLE, -1 },
     { "initialPurgeLength", offsetof(printer_t, early_transition_len), DOUBLE, -1 },
     { "purgeTarget", offsetof(printer_t, transition_target), DOUBLE, -1 },
+    { "transitionInInfill", offsetof(printer_t, transition_in_infill), BOOLEAN, -1} ,
+    { "transitionInSupport", offsetof(printer_t, transition_in_support), BOOLEAN, -1} ,
     { "printSpeed", offsetof(printer_t, print_speed), DOUBLE, -1 },
     { "minDensity", offsetof(printer_t, min_density), DOUBLE, -1 },
     { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed), DOUBLE, -1 },
@@ -56,7 +58,7 @@ process_event:
 	if (event.type == YAML_MAPPING_START_EVENT) depth++;
 	else if (event.type == YAML_MAPPING_END_EVENT) depth--;
 	else if (event.type == YAML_SCALAR_EVENT) {
-	    const char *key = event.data.scalar.value;
+	    const char *key = (char *) event.data.scalar.value;
 	    const char *value;
 
 	    if (! yaml_wrapper_event(p, &event2)) {
@@ -70,7 +72,7 @@ process_event:
 		goto process_event;
 	    }
 
-	    value = event2.data.scalar.value;
+	    value = (char *) event2.data.scalar.value;
 
 	    for (ki = 0; ki < N_KEYS; ki++) {
 		if (strcmp(key, keys[ki].key) == 0) {
