@@ -88,12 +88,13 @@ static double
 transition_length(int from, int to, double total_mm)
 {
     double mn = printer->min_transition_len;
-    double mx = total_mm < 5000 ? printer->early_transition_len : printer->transition_len;
+    double mx = printer->transition_len;
     active_material_t *in = get_active_material(to);
     active_material_t *out = get_active_material(from);
     double factor;
 
     if (from == to) return 0;
+    if (total_mm < 5000) return printer->early_transition_len;
 
     if (in->strength == STRONG) {
 	factor = 0;
