@@ -27,6 +27,7 @@ static struct {
     { "Transparent",	WEAK },
     { "Orange",		MEDIUM },
     { "Green",		STRONG },
+    { "Red",		STRONG },
 };
 
 #define N_DEFAULT_COLOUR_STRENGTHS (sizeof(default_colour_strengths) / sizeof(default_colour_strengths[0]))
