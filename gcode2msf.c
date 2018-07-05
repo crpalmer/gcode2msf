@@ -294,6 +294,7 @@ int main(int argc, char **argv)
 	    else if (strcmp(argv[1], "--trace") == 0) gcode_trace = 1;
 	    else if (strcmp(argv[1], "--extrusions") == 0) extrusions = 1;
 	    else if (strcmp(argv[1], "--reduce-pings") == 0) reduce_pings = 1;
+	    else if (strcmp(argv[1], "--debug-tool-changes") == 0) debug_tool_changes = 1;
 	    else if (strcmp(argv[1], "--output") == 0 || strcmp(argv[1], "-o") == 0) {
 		output_fname = argv[2];
 		argc--;
@@ -328,9 +329,10 @@ usage:
 		fprintf(stderr, "  <material>: -mX material to set the material of drive \"X\" to \"material\"\n");
 		fprintf(stderr, "  <strength>: -sX strength to set the strength of the material's colour (WEAK, MEDIUM or STRONG)\n");
 		fprintf(stderr, "  <flags>: any number of:\n");
-		fprintf(stderr, "           --trace:        trace the gcode as it is processed\n");
+		fprintf(stderr, "           --debug-tool-changes: Leave Tx in the output to visualize the tool changes [DO NOT PRINT]\n");
 		fprintf(stderr, "           --summary:      provide a more detailed summary of the print\n");
 		fprintf(stderr, "           --reduce-pings: ping less frequently as the print gets longer and longer\n");
+		fprintf(stderr, "           --trace:        trace the gcode as it is processed\n");
 		exit(0);
 	    } else {
 		break;

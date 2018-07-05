@@ -37,6 +37,7 @@ extern int n_pings;
 extern int extrusions;
 extern int gcode_trace;
 extern int validate_only;
+extern int debug_tool_changes;
 
 void gcode_to_runs(const char *fname);
 void gcode_to_msf_gcode(const char *output_fname);

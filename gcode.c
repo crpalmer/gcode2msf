@@ -51,6 +51,7 @@ static char buf[1024*1024];
 int extrusions = 0;
 int gcode_trace = 0;
 int validate_only = 0;
+int debug_tool_changes = 0;
 
 static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
@@ -874,6 +875,7 @@ produce_gcode()
 	    }
 	    tool = token.x.tool;
 	    fprintf(o, "; Switching to tool %d\n", tool);
+	    if (debug_tool_changes) fprintf(o, "T%d\n", token.x.tool);
 	    break;
 	case DONE:
 	    total_e += printer->bowden_len > 0 ? printer->bowden_len : EXTRA_FILAMENT;
