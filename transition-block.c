@@ -191,6 +191,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     t->mm_from_runs = *mm_from_runs;
     t->mm_pre_transition = *filament_mm;
     t->offset = pre_run->offset;
+    t->next_move_no_extrusion = pre_run->next_move_no_extrusion;
 
     t->avail_infill = printer->transition_in_infill && pre_run->trailing_infill_mm > 0 ? pre_run->trailing_infill_mm : 0;
     t->avail_support = printer->transition_in_support && run->leading_support_mm > 0 ? run->leading_support_mm : 0;
@@ -501,6 +502,7 @@ transition_block_dump_transitions(FILE *o)
 	    support[t->to] += t->support_mm;
 	    fprintf(o, "  ###  %12.2f | %-10.2f / %12.2f | %-10.2f", mm[t->from], waste[t->from], mm[t->to], waste[t->to]);
 	    fprintf(o, " offset=%ld", t->offset);
+	    if (t->next_move_no_extrusion) fprintf(o, " no-extrusion");
 	    fprintf(o, "\n");
 	}
     }

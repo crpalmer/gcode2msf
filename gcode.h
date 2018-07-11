@@ -14,6 +14,7 @@ typedef struct {
     long   offset;
     double trailing_infill_mm, leading_support_mm;
     int    pre_transition, post_transition;
+    int    next_move_no_extrusion;
 } run_t;
 
 typedef struct {

@@ -29,7 +29,7 @@ output_summary()
 	last_layer_z = runs[i].z;
 	for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
 	    total[runs[j].t] += runs[j].e;
-	    printf(" %10.2f [%d]", runs[j].e, runs[j].t);
+	    printf(" %10.2f [%d]%c", runs[j].e, runs[j].t, runs[j].next_move_no_extrusion ? '!' : ' ');
 	    gap -= 15;
 	}
 	printf("%*c totals:", gap, ' ');

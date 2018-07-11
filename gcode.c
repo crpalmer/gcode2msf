@@ -25,7 +25,7 @@ typedef struct {
     } t;
     union {
 	struct {
-	    double x, y, z, e;
+	    double x, y, z, e, f;
 	} move;
 	struct {
 	    int num, step;
@@ -46,6 +46,7 @@ typedef struct {
     double total_e;
     double acc_transition;
     double acc_waste;
+    int    next_move_full;
 } extrusion_state_t;
 
 static FILE *f, *o;
@@ -58,7 +59,7 @@ int validate_only = 0;
 int debug_tool_changes = 0;
 int stop_at_ping = -1;
 
-static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_f, last_e_z = 0, acc_e = 0, last_reported_z = -1;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
 static path_t last_e_path = NORMAL, cur_path = NORMAL;
 static double total_e = 0;
@@ -221,6 +222,7 @@ get_next_token_wrapped()
 	    if (! find_arg(buf, 'Y', &t.x.move.y)) t.x.move.y = last_y;
 	    if (! find_arg(buf, 'Z', &t.x.move.z)) t.x.move.z = last_z;
 	    if (! find_arg(buf, 'E', &t.x.move.e)) t.x.move.e = last_e;
+	    if (! find_arg(buf, 'F', &t.x.move.f)) t.x.move.f = last_f;
 	    return t;
 	}
 	if (STRNCMP(buf, "; finishing tower layer") == 0 ||
@@ -265,6 +267,7 @@ get_next_token_wrapped()
 static void
 update_last_state(token_t *t)
 {
+    last_f = t->x.move.f;
     last_e = t->x.move.e;
     last_x = t->x.move.x;
     last_y = t->x.move.y;
@@ -354,6 +357,7 @@ add_run(long offset)
 	runs[n_runs].leading_support_mm = isfinite(support_start_e) ? support_end_e - support_start_e : 0;
 	runs[n_runs].pre_transition = -1;
 	runs[n_runs].post_transition = -1;
+	runs[n_runs].next_move_no_extrusion = 0;
 	n_runs++;
     }
 }
@@ -362,16 +366,23 @@ static void
 preprocess()
 {
     long after_last_e_offset = 0;
+    int no_extrusion_after_last_e = 0;
+    int *check_next_move = NULL;
 
     reset_state();
     while (1) {
 	token_t t = get_next_token();
 	switch(t.t) {
 	case MOVE:
+	    if (check_next_move) {
+		*check_next_move = (t.x.move.e == last_e);
+		check_next_move = NULL;
+	    }
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
 		if (started) {
 		    add_run(after_last_e_offset);
+		    runs[n_runs-1].next_move_no_extrusion = no_extrusion_after_last_e;
 		    show_extrusion('+', 0);
 		}
 		last_e_z = t.x.move.z;
@@ -407,7 +418,10 @@ preprocess()
 		last_e_path = cur_path;
 	    }
 
-	    if (t.x.move.e != last_e) after_last_e_offset = ftell(f);
+	    if (t.x.move.e != last_e) {
+		after_last_e_offset = ftell(f);
+		check_next_move = &no_extrusion_after_last_e;
+	    }
 
 	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
 
@@ -440,6 +454,8 @@ preprocess()
 		}
 		accumulate();
 		add_run(t.pos);
+		check_next_move = &runs[n_runs-1].next_move_no_extrusion;
+		no_extrusion_after_last_e = 0;
 		if (validate_only && acc_e == 0) printf("Z %.02f ******* Tool change with no extrusion, chroma may screw this up\n", last_z);
 		show_extrusion('+', 0);
 		reset_state();
@@ -840,10 +856,15 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     actual_e = transition_e - transition_starting_e;
 
     do_retraction();
+    if (z_hop) move_to(NAN, NAN, l->z+z_hop);
 
-    move_to(NAN, NAN, last_z+z_hop);
-    move_to(last_x, last_y, NAN);
-    if (z_hop) move_to(NAN, NAN, last_z);
+    if (t->next_move_no_extrusion) {
+	e->next_move_full = 1;
+    } else {
+	move_to(last_x, last_y, NAN);
+	if (z_hop) move_to(NAN, NAN, last_z);
+    }
+
     // assume unretraction will done just immediately after tool change: undo_retraction();
 
     fprintf(o, "G92 E%f\n", original_e);
@@ -863,7 +884,7 @@ produce_gcode()
 {
     int l = 0;
     int t = 0;
-    extrusion_state_t e = { 0, 0, 0 };
+    extrusion_state_t e = { 0, };
 
     last_e = last_x = last_y = last_z = 0;
 
@@ -882,7 +903,12 @@ produce_gcode()
 	case MOVE:
 	    //assert(t == 0 || l >= n_layers || token.x.move.e == last_e || token.x.move.z == layers[l].z);
 	    update_last_state(&token);
-	    fprintf(o, "%s", buf);
+	    if (e.next_move_full) {
+		e.next_move_full = 0;
+		fprintf(o, "G1 X%f Y%f Z%f E%f F%f\n", token.x.move.x, token.x.move.y, token.x.move.z, token.x.move.e, token.x.move.f);
+	    } else {
+		fprintf(o, "%s", buf);
+	    }
 	    break;
 	case TOOL:
 	    fprintf(o, "; Switching to tool %d\n", token.x.tool);
