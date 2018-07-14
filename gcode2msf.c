@@ -345,7 +345,7 @@ usage:
 
     if (argc != 3) goto usage;
 
-    if (! materials_load("materials.yml")) {
+    if (! materials_load("config/materials.yml")) {
 	perror("materials.yaml");
 	exit(1);
     }
