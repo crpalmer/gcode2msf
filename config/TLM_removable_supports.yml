@@ -1,0 +1,61 @@
+version: 2
+name: TLM removable supports
+preset: tevo_littlemonster
+gpxProfile: false
+gpxConfigPath: ''
+inputs:
+  - gcode
+engine: reprap
+postprocessing: false
+volumetric: false
+independentExtruderAxes: false
+extruderStepsPerMM: 0
+filamentDiameter: 1.75
+nozzleDiameter: 0.4
+extruderCount: 1
+printExtruder: false
+printBed:
+  circular: true
+  x: 0
+  'y': 0
+  diameter: 300
+  origin: middle
+  originOffsets:
+    x: 150
+    'y': 150
+bowdenTube: 725
+firmwarePurge: 0
+transitions:
+  method: 1
+  purgeLength: 70
+  minPurgeLength: 70
+  initialPurgeLength: 70
+  purgeTarget: 0.2
+  transitionInInfill: true
+  transitionInSupport: true
+  towers:
+    printSpeed: 70
+    extrusionWidth: auto
+    minDensity: 0.05
+    minBottomDensity: 0.25
+    maxDensity: 1
+    perimeterSpeedMultiplier: 1
+    forceBottomPerimeter: true
+    infillPerimeterOverlap: auto
+  sideTransitions:
+    purgeSpeed: 4
+    purgeInPlace: false
+    coordinates:
+      x: 0
+      'y': 0
+    purgeEdge: west
+    purgeEdgeOffset: 2
+pings:
+  jogPauses: false
+  retraction: auto
+  pingOffTower: true
+  mechanicalPingGCode: ''
+calibration:
+  loadingOffset: 25821
+  printValue: 125272
+  calibrationGCodeLength: 4161.907720000043

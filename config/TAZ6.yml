@@ -1,0 +1,61 @@
+version: 2
+name: TAZ 6
+preset: lulzbot_taz6
+gpxProfile: false
+gpxConfigPath: ''
+inputs:
+  - gcode
+engine: marlin
+postprocessing: false
+volumetric: false
+independentExtruderAxes: false
+extruderStepsPerMM: 0
+filamentDiameter: 1.75
+nozzleDiameter: 0.4
+extruderCount: 1
+printExtruder: false
+printBed:
+  circular: false
+  x: 298
+  'y': 275
+  diameter: 0
+  origin: bottomleft
+  originOffsets:
+    x: 0
+    'y': 0
+bowdenTube: false
+firmwarePurge: 0
+transitions:
+  method: 1
+  purgeLength: 160
+  minPurgeLength: 70
+  initialPurgeLength: 160
+  purgeTarget: 0.2
+  transitionInInfill: true
+  transitionInSupport: true
+  towers:
+    printSpeed: 50
+    extrusionWidth: auto
+    minDensity: 0.05
+    minBottomDensity: 0.4
+    maxDensity: 1
+    perimeterSpeedMultiplier: 0.5
+    forceBottomPerimeter: true
+    infillPerimeterOverlap: auto
+  sideTransitions:
+    purgeSpeed: 4
+    purgeInPlace: false
+    coordinates:
+      x: 0
+      'y': 0
+    purgeEdge: west
+    purgeEdgeOffset: 2
+pings:
+  jogPauses: false
+  retraction: auto
+  pingOffTower: false
+  mechanicalPingGCode: ''
+calibration:
+  loadingOffset: 21490
+  printValue: 118013
+  calibrationGCodeLength: 3895.178849999878
