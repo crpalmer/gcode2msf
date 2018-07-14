@@ -25,6 +25,7 @@ double transition_final_waste;
 #define MIN_SPLICE_LEN		 80
 #define MIN_PING_LEN		 22	/* Really 20, but give a little slack for pinging off tower */
 #define DENSITY_FOR_PERIMETER	0.2
+#define PING_STABILIZE_MM	5000
 
 static double
 layer_transition_mm(layer_t *l)
@@ -88,7 +89,7 @@ transition_length(int from, int to, double total_mm)
     double factor;
 
     if (from == to) return 0;
-    if (total_mm < 5000) return printer->early_transition_len;
+    if (total_mm < PING_STABILIZE_MM) return printer->early_transition_len;
 
     if (in->strength == STRONG) {
 	factor = 0;
@@ -143,7 +144,9 @@ layer_add_extra_block_purge(layer_t *l, double extra_mm)
  * After long enough, really reduce them to speed up large prints.
  */
 
-#define PING_THRESHOLD 425
+#define EARLY_PING_MM		1000
+#define EARLY_PING_THRESHOLD	350
+#define PING_THRESHOLD		425
 #define PING_SECOND_THRESHOLD	(PING_THRESHOLD*2)
 #define PING_SECOND_E		10000
 #define PING_THIRD_THRESHOLD	(PING_SECOND_THRESHOLD*4)
@@ -152,6 +155,8 @@ layer_add_extra_block_purge(layer_t *l, double extra_mm)
 static double
 get_ping_threshold(double total_mm)
 {
+    if (total_mm < EARLY_PING_MM) return EARLY_PING_THRESHOLD;
+
     if (reduce_pings) {
 	if (total_mm >= PING_THIRD_E) return PING_THIRD_THRESHOLD;
 	if (total_mm >= PING_SECOND_E) return PING_SECOND_THRESHOLD;
@@ -264,22 +269,6 @@ prune_transition_tower()
     for (i = 0; i < n_runs; i++) {
 	if (runs[i].pre_transition > n_transitions) runs[i].pre_transition = -1;
 	if (runs[i].post_transition > n_transitions) runs[i].post_transition = -1;
-    }
-}
-
-static void
-reduce_pings_when_no_splices()
-{
-    int i, j;
-
-    for (i = 0; i < n_transitions; i++) {
-	if (transitions[i].ping && transitions[i].from == transitions[i].to) {
-	    transitions[i].ping = 0;
-	    for (j = i+1; j < n_transitions && transitions[j].from == transitions[j].to; j++) {
-		transitions[j].ping = 0;
-	    }
-	    transitions[j-1].ping = 1;
-	}
     }
 }
 
@@ -469,7 +458,6 @@ transition_block_create_from_runs()
     int iterations = 0;
     compute_transition_tower();
     prune_transition_tower();
-    reduce_pings_when_no_splices();
     do {
 	iterations++;
 	place_transition_block();
