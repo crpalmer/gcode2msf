@@ -751,6 +751,19 @@ clamp_xy_to_perimeter(layer_t *l, int is_y_first, xy_t *xy)
     pct_to_xy(l, is_y_first, pct, xy);
 }
 
+typedef struct {
+    double x,y,e;
+} xye_t;
+
+static void
+record_move_and_extrude(xye_t *xye, xy_t *xy, double e)
+{
+    xye->x = xy->x;
+    xye->y = xy->y;
+    xye->e = e;
+    transition_e = e;
+}
+
 static void
 transition_fill(layer_t *l, transition_t *t)
 {
@@ -761,11 +774,15 @@ transition_fill(layer_t *l, transition_t *t)
     xy_t xy, next_xy;
     int is_last = t->num == l->transition0 + l->n_transitions - 1;
     corner_t corner = layer_to_corner(l);
-
-    fprintf(o, "; Filling in the tower portion, density = %f\n", l->density);
+    static xye_t xye[10000];
+    int n_xye = 0;
+    double scale, start;
+    int i;
 
     if (corner == TOP_RIGHT || corner == BOTTOM_RIGHT) x_stride = -x_stride;
     if (corner == TOP_LEFT || corner == TOP_RIGHT) y_stride = -y_stride;
+
+    start = transition_e;
 
     pct_to_xy(l, 0, transition_pct, &xy);
     while ((is_last || transition_e - transition_starting_e < t->pre_mm + t->post_mm) && transition_pct < 1 - EPSILON) {
@@ -777,8 +794,7 @@ transition_fill(layer_t *l, transition_t *t)
 	    if (is_y_first) next_xy.x += x_stride;
 	    else next_xy.y += y_stride;
 	    clamp_xy_to_perimeter(l, is_y_first, &next_xy);
-	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    check_ping_complete(next_xy.x, next_xy.y);
+	    record_move_and_extrude(&xye[n_xye++], &next_xy, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
 	    transition_pct = xy_to_pct(l, &next_xy);
 
 	    if (transition_pct >= 1 - EPSILON) break;
@@ -786,12 +802,23 @@ transition_fill(layer_t *l, transition_t *t)
 	    /* cross over to the other side */
 	    xy = next_xy;
 	    pct_to_xy(l, ! is_y_first, transition_pct, &next_xy);
-	    move_to_and_extrude(next_xy.x, next_xy.y, NAN, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
-	    check_ping_complete(next_xy.x, next_xy.y);
+	    record_move_and_extrude(&xye[n_xye++], &next_xy, extrusion_mm(l, xy.x, xy.y, next_xy.x, next_xy.y));
 	    transition_pct = xy_to_pct(l, &next_xy);
 	    xy = next_xy;
 	}
     }
+
+    scale = ((t->pre_mm + t->post_mm) - (start - transition_starting_e)) / (xye[n_xye-1].e - start);
+
+    fprintf(o, "; Filling in the tower portion, density = %f, extrusion-width = %f\n", l->density, printer->nozzle * scale);
+
+    for (i = 0; i < n_xye; i++) {
+	move_to_and_extrude(xye[i].x, xye[i].y, NAN, (xye[i].e - start) * scale + start);
+	check_ping_complete(xye[i].x, xye[i].y);
+    }
+
+    assert(t->pre_mm + t->post_mm - 0.01 < transition_e - transition_starting_e &&
+	   transition_e - transition_starting_e < t->pre_mm + t->post_mm + 0.01);
 
     if (transition_pct > 1) {
 	if (is_last) {} // fprintf(stderr, "WARNING: layer %d generated pct=%f extra transition\n", l->num + 1, transition_pct);
@@ -808,6 +835,7 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     double start_total_e;
 
     original_e = last_e;
+    transition_e = transition_starting_e = last_e;
 
     start_total_e = e->total_e + t->mm_from_runs;
 
@@ -831,12 +859,12 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     if (z_hop) move_to(NAN, NAN, l->z);
 
     if (t->ping) {
-	ping_complete_e = transition_e + 20;
+	ping_complete_e = transition_starting_e + 20;
 
 	pings[n_pings].mm = start_total_e;
 	n_pings++;
 
-	fprintf(o, "; Starting initial ping pause at %f complete at %f (from %f)\n", pings[n_pings-1].mm, ping_complete_e, transition_e);
+	fprintf(o, "; Starting initial ping pause at %f complete at %f (from %f)\n", pings[n_pings-1].mm, ping_complete_e, transition_starting_e);
 	if (stop_at_ping == n_pings) {
 		fclose(o);
 		exit(0);
@@ -850,7 +878,6 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 
     undo_retraction();
 
-    transition_e = transition_starting_e = last_e;
     if (l->transition0 == t->num && l->use_perimeter) draw_perimeter(l, t);
     transition_fill(l, t);
     actual_e = transition_e - transition_starting_e;
