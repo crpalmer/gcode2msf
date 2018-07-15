@@ -10,11 +10,11 @@ Default PLA:
       compressionFactor: 0
       reverse: false
     Default Soluble:
-      heatFactor: 5
+      heatFactor: 6
       compressionFactor: 3
       reverse: false
     Polysupport:
-      heatFactor: 5
+      heatFactor: 6
       compressionFactor: 2
       reverse: false
 Default PETG:
@@ -40,7 +40,7 @@ Default Soluble:
   type: Soluble
   combinations:
     Default PLA:
-      heatFactor: 5
+      heatFactor: 6
       compressionFactor: 3
       reverse: false
     Default PETG:
@@ -59,7 +59,7 @@ Polysupport:
   type: PLA
   combinations:
     Default PLA:
-      heatFactor: 5
+      heatFactor: 6
       compressionFactor: 2
       reverse: false
     Default PETG:
@@ -71,6 +71,6 @@ Polysupport:
       compressionFactor: 3
       reverse: false
     Polysupport:
-      heatFactor: 5
+      heatFactor: 6
       compressionFactor: 2
       reverse: false
