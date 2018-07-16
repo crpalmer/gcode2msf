@@ -18,6 +18,7 @@ typedef struct {
     int num;
     int from, to;
     long offset;
+    double total_e;
     double mm_from_runs;
     double mm_pre_transition;
     double infill_mm;

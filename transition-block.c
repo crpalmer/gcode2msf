@@ -195,6 +195,7 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     t->mm_from_runs = *mm_from_runs;
     t->mm_pre_transition = *filament_mm;
     t->offset = pre_run->offset;
+    t->total_e = pre_run->total_e;
     t->next_move_no_extrusion = pre_run->next_move_no_extrusion;
 
     t->avail_infill = printer->transition_in_infill && pre_run->trailing_infill_mm > 0 ? pre_run->trailing_infill_mm : 0;

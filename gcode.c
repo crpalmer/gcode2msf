@@ -48,6 +48,7 @@ typedef struct {
     double total_e;
     double acc_transition;
     double acc_waste;
+    double total_waste, acc_total_waste;
     int    next_move_full;
 } extrusion_state_t;
 
@@ -365,6 +366,7 @@ add_run(long offset)
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
 	runs[n_runs].offset = offset;
+	runs[n_runs].total_e = total_e;
 	runs[n_runs].trailing_infill_mm = isfinite(infill_start_e) ? total_e - infill_start_e : 0;
 	if (isfinite(support_start_e) && ! isfinite(support_end_e)) support_end_e = total_e;
 	runs[n_runs].leading_support_mm = isfinite(support_start_e) ? support_end_e - support_start_e : 0;
@@ -559,6 +561,8 @@ add_splice(int drive, double mm, double pre_mm, extrusion_state_t *e)
     splices[n_splices].transition_mm = e->acc_transition + pre_mm;
     n_splices++;
 
+    e->total_waste += e->acc_waste + e->acc_total_waste;
+    e->acc_total_waste = pre_mm;
     e->acc_waste = e->acc_transition = -pre_mm;
 }
 
@@ -848,12 +852,9 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     double original_e;
     double actual_e;
     xy_t start_xy;
-    double start_total_e;
 
     original_e = last_e;
     transition_e = transition_starting_e = last_e;
-
-    start_total_e = e->total_e + t->mm_from_runs;
 
     fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
 
@@ -879,8 +880,9 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     if (t->ping) {
 	ping_complete_e = transition_starting_e + 20;
 
-	pings[n_pings].mm = start_total_e;
+	pings[n_pings].mm = t->total_e + e->total_waste;
 	n_pings++;
+printf("ping %d: %.2f %.2f\n", n_pings, t->total_e, e->total_waste);
 
 	fprintf(o, "; Starting initial ping pause at %f complete at %f (from %f)\n", pings[n_pings-1].mm, ping_complete_e, transition_starting_e);
 	if (stop_at_ping == n_pings) {
