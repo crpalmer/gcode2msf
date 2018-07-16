@@ -12,7 +12,6 @@ typedef struct {
     double e;
     int    t;
     long   offset;
-    double total_e;
     double trailing_infill_mm, leading_support_mm;
     int    pre_transition, post_transition;
     int    next_move_no_extrusion;
