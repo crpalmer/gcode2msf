@@ -898,9 +898,11 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 
     if (l->transition0 == t->num && l->use_perimeter) draw_perimeter(l, t);
     transition_fill(l, t);
-    actual_e = transition_e - transition_starting_e;
 
     do_retraction();
+
+    actual_e = transition_e - transition_starting_e;
+
     if (z_hop) move_to(NAN, NAN, l->z+z_hop);
 
     if (t->next_move_no_extrusion) {
