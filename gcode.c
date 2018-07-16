@@ -21,6 +21,7 @@ typedef struct {
 	PING,
 	START,
 	OTHER,
+	FAN,
 	DONE
     } t;
     union {
@@ -32,6 +33,7 @@ typedef struct {
 	} ping;
 	double e;
 	int tool;
+	double fan;
     } x;
     long pos;
 } token_t;
@@ -60,6 +62,7 @@ int debug_tool_changes = 0;
 int stop_at_ping = -1;
 
 static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_f, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double last_fan = 0;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
 static path_t last_e_path = NORMAL, cur_path = NORMAL;
 static double total_e = 0;
@@ -243,6 +246,15 @@ get_next_token_wrapped()
 	    t.t = SET_E;
 	    if (find_arg(buf, 'E', &t.x.e)) return t;
 	}
+	if (STRNCMP(buf, "M106 ") == 0) {
+	    t.t = FAN;
+	    if (find_arg(buf, 'S', &t.x.fan)) return t;
+	}
+	if (STRNCMP(buf, "M107") == 0) {
+	    t.t = FAN;
+	    t.x.fan = 0;
+	    return  t;
+	}
 	if (STRNCMP(buf, "; *** Main G-code ***") == 0 ||
 	    STRNCMP(buf, "; layer 1, ") == 0) {
 	    t.t = START;
@@ -288,6 +300,7 @@ get_next_token()
 	case SET_E: printf("SET_E %f\n", t.x.e); break;
 	case START: printf("START\n"); break;
 	case TOOL: printf("TOOL %d\n", t.x.tool); break;
+	case FAN: printf("FAN %f\n", t.x.fan); break;
 	case OTHER: printf("%s", buf); break;
 	default: printf("*** UNKNOWN TOKEN ****\n");
         }
@@ -445,6 +458,9 @@ preprocess()
 	    accumulate();
 	    start_e = t.x.e;
 	    last_e = t.x.e;
+	    break;
+	case FAN:
+	    last_fan = t.x.fan;
 	    break;
 	case TOOL:
 	    if (tool != t.x.tool) {
@@ -841,6 +857,8 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 
     fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
 
+    if (last_fan > 0) fprintf(o, "M107\n");
+
     if (t->from != t->to) {
 	e->total_e += t->mm_from_runs;
 	add_splice(t->from, e->total_e, t->pre_mm, e);
@@ -895,6 +913,7 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     // assume unretraction will done just immediately after tool change: undo_retraction();
 
     fprintf(o, "G92 E%f\n", original_e);
+    if (last_fan > 0) fprintf(o, "M106 S%f\n", last_fan);
     fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->pre_mm, t->post_mm);
 
     e->acc_transition  += t->infill_mm + t->pre_mm + t->post_mm + t->support_mm;
@@ -937,6 +956,10 @@ produce_gcode()
 		fprintf(o, "%s", buf);
 	    }
 	    break;
+	case FAN:
+	    last_fan = token.x.fan;
+	    fprintf(o, "%s", buf);
+	    break;
 	case TOOL:
 	    fprintf(o, "; Switching to tool %d\n", token.x.tool);
 	    if (debug_tool_changes) fprintf(o, "T%d\n", token.x.tool);
@@ -948,7 +971,8 @@ produce_gcode()
 	    return;
 	case SET_E:
 	    last_e = token.x.e;
-	    /* fall through */
+	    fprintf(o, "%s", buf);
+	    break;
 	default:
 	    fprintf(o, "%s", buf);
 	    break;
