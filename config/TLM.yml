@@ -57,5 +57,5 @@ pings:
   mechanicalPingGCode: ''
 calibration:
   loadingOffset: 25543
-  printValue: 125312
+  printValue: 126363.62
   calibrationGCodeLength: 4129.52998000003
