@@ -27,7 +27,7 @@ bowdenTube: 625
 firmwarePurge: 0
 transitions:
   method: 1
-  purgeLength: 160
+  purgeLength: 130
   minPurgeLength: 70
   initialPurgeLength: 160
   purgeTarget: 0.2
