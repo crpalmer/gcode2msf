@@ -6,6 +6,7 @@
 #define STRNCMP(a, b) strncmp(a, b, strlen(b))
 
 static char buf[10*1024*1024];
+static FILE *f;
 
 static int
 decode_hex(const char *s, unsigned *v)
@@ -77,7 +78,19 @@ report_splice(int from, int to)
 int
 main(int argc, char **argv)
 {
-    while (fgets(buf, sizeof(buf), stdin) != NULL) {
+    if (argc == 1) f = stdin;
+    else if (argc == 2) {
+	if ((f = fopen(argv[1], "r")) == NULL) {
+	    perror(argv[1]);
+	}
+    }
+
+    if (f == NULL) {
+	fprintf(stderr, "usage: [msf]\n");
+	exit(1);
+    }
+
+    while (fgets(buf, sizeof(buf), f) != NULL) {
 	if (STRNCMP(buf, "MSF") == 0) {
 	    printf("MSF Version %s", &buf[3]);
 	} else if (STRNCMP(buf, "cu:") == 0) {
