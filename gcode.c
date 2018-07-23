@@ -41,8 +41,11 @@ typedef struct {
 typedef enum { NORMAL = 0, INFILL, SUPPORT } path_t;
 const char *path_names[3] = { "normal", "infill", "support" };
 
-typedef enum { KISSLICER = 0, SIMPLIFY3D } slicer_t;
-const char *slicer_names[] = { "KISSlicer", "Simplify3D" };
+typedef enum { UNKNOWN = 0, KISSLICER, SIMPLIFY3D, SLIC3R } slicer_t;
+const char *slicer_names[] = { "Unknown", "KISSlicer", "Simplify3D", "Slic3r" };
+
+static slicer_t slicer;
+static int has_started;
 
 typedef struct {
     double total_e;
@@ -61,7 +64,7 @@ int validate_only = 0;
 int debug_tool_changes = 0;
 int stop_at_ping = -1;
 
-static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_f, last_e_z = 0, acc_e = 0, last_reported_z = -1;
+static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_f, last_e_z = NAN, acc_e = 0, last_reported_z = -1;
 static double last_fan = 0;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
 static path_t last_e_path = NORMAL, cur_path = NORMAL;
@@ -92,8 +95,6 @@ static double s3d_default_speed = 0;
 static double infill_mm_per_min = 0;
 static double first_layer_mm_per_min = 0;
 
-static int slicer_votes[2] = { 0, };
-
 static double mm_per_sec_to_per_min(double mm_per_sec)
 {
     return mm_per_sec * 60;
@@ -105,25 +106,24 @@ static double s3d_speed(double pct)
 }
 
 struct {
-    slicer_t slicer;
     const char *key;
     double *value;
     double (*normalize)(double);
 } gcode_params[] = {
     /* KISSlicer */
-    { KISSLICER, "; destring_length = ", &retract_mm, NULL },
-    { KISSLICER, "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
-    { KISSLICER, "; Z_lift_mm = ", &z_hop, NULL },
-    { KISSLICER, "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
-    { KISSLICER, "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
-    { KISSLICER, "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
+    { "; destring_length = ", &retract_mm, NULL },
+    { "; destring_speed_mm_per_s = ", &retract_mm_per_min, mm_per_sec_to_per_min },
+    { "; Z_lift_mm = ", &z_hop, NULL },
+    { "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
+    { "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
+    { "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
     /* S3D */
-    { SIMPLIFY3D, ";   extruderRetractionDistance,", &retract_mm, NULL },
-    { SIMPLIFY3D, ";   extruderRetractionZLift,", &z_hop, NULL },
-    { SIMPLIFY3D, ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
-    { SIMPLIFY3D, ";   rapidXYspeed,", &travel_mm_per_min, NULL },
-    { SIMPLIFY3D, ";   defaultSpeed,", &s3d_default_speed, NULL },
-    { SIMPLIFY3D, ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
+    { ";   extruderRetractionDistance,", &retract_mm, NULL },
+    { ";   extruderRetractionZLift,", &z_hop, NULL },
+    { ";   extruderRetractionSpeed,", &retract_mm_per_min, NULL },
+    { ";   rapidXYspeed,", &travel_mm_per_min, NULL },
+    { ";   defaultSpeed,", &s3d_default_speed, NULL },
+    { ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
 };
 
 #define N_GCODE_PARAMS (sizeof(gcode_params) / sizeof(gcode_params[0]))
@@ -158,7 +158,6 @@ check_for_gcode_params()
 	    double v = atof(buf + strlen(gcode_params[i].key));
 	    if (gcode_params[i].normalize) v = gcode_params[i].normalize(v);
 	    *gcode_params[i].value = v;
-	    slicer_votes[gcode_params[i].slicer]++;
 	    break;
 	}
     }
@@ -170,7 +169,7 @@ check_for_kisslicer_path_types()
     const char *p;
     double feed, head;
 
-    if (slicer_votes[KISSLICER] < slicer_votes[SIMPLIFY3D]) return;
+    if (slicer != KISSLICER) return;
 
     if (STRNCMP(buf, "; '") != 0) return;
     if ((p = strchr(buf+3, '\'')) == NULL) return;
@@ -190,7 +189,7 @@ check_for_simplify3d_path_types()
 {
     const char *p;
 
-    if (slicer_votes[SIMPLIFY3D] < slicer_votes[KISSLICER]) return;
+    if (slicer != SIMPLIFY3D) return;
 
     if (buf[0] != ';') return;
     for (p = buf+1; *p && (isspace(*p) || islower(*p)); p++) {}
@@ -209,6 +208,7 @@ rewind_input()
 {
     rewind(f);
     next_pos = 0;
+    has_started = 0;
 }
 
 static token_t
@@ -217,17 +217,44 @@ get_next_token_wrapped()
     token_t t;
 
     while (fgets(buf, sizeof(buf), f) != NULL) {
+	t.t = OTHER;
 	t.pos = next_pos;
 	next_pos = ftell(f);
 	if (STRNCMP(buf, "G1 ") == 0) {
 	    t.t = MOVE;
 	    if (! find_arg(buf, 'X', &t.x.move.x)) t.x.move.x = last_x;
 	    if (! find_arg(buf, 'Y', &t.x.move.y)) t.x.move.y = last_y;
-	    if (! find_arg(buf, 'Z', &t.x.move.z)) t.x.move.z = last_z;
 	    if (! find_arg(buf, 'E', &t.x.move.e)) t.x.move.e = last_e;
 	    if (! find_arg(buf, 'F', &t.x.move.f)) t.x.move.f = last_f;
+	    if (! find_arg(buf, 'Z', &t.x.move.z)) {
+		t.x.move.z = last_z;
+	    } else {
+		if (slicer == SLIC3R && ! has_started) {
+		    next_pos = t.pos;
+		    fseek(f, next_pos, SEEK_SET);
+		    t.t = START;
+		    has_started = 1;
+		    return t;
+		}
+	    }
 	    return t;
 	}
+
+	if (STRNCMP(buf, "; G-Code generated by Simplify3D(R)") == 0) {
+	    slicer = SIMPLIFY3D;
+	    return t;
+	}
+
+	if (STRNCMP(buf, "; KISSlicer") == 0) {
+	    slicer = KISSLICER;
+	    return t;
+	}
+
+	if (STRNCMP(buf, "; generated by Slic3r") == 0) {
+	    slicer = SLIC3R;
+	    return t;
+	}
+
 	if (STRNCMP(buf, "; finishing tower layer") == 0 ||
 	    STRNCMP(buf, "; finishing sparse tower layer") == 0) {
 	    t.t = START_TOWER;
@@ -257,6 +284,7 @@ get_next_token_wrapped()
 	}
 	if (STRNCMP(buf, "; *** Main G-code ***") == 0 ||
 	    STRNCMP(buf, "; layer 1, ") == 0) {
+	    has_started = 1;
 	    t.t = START;
 	    return t;
 	}
@@ -268,7 +296,6 @@ get_next_token_wrapped()
 	check_for_gcode_params();
 	check_for_kisslicer_path_types();
 	check_for_simplify3d_path_types();
-	t.t = OTHER;
 	return t;
     }
 
@@ -393,7 +420,7 @@ preprocess()
 	    }
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
-		if (started) {
+		if (started && isfinite(last_e_z)) {
 		    add_run(after_last_e_offset);
 		    runs[n_runs-1].next_move_no_extrusion = no_extrusion_after_last_e;
 		    show_extrusion('+', 0);
@@ -484,6 +511,7 @@ preprocess()
 	    break;
 	case START:
 	    started = 1;
+	    last_e_z = NAN;
 	    accumulate();
 	    reset_state();
 	    break;
