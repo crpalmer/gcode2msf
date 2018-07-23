@@ -205,6 +205,7 @@ output_material_usage_and_transition_block()
     double used[N_DRIVES] = {0, };
     double waste[N_DRIVES] = { 0, };
     double transition_mm[N_DRIVES] = { 0, };
+    double total_used;
     double total_waste = 0;
     double total_transition_mm = 0;
     double last = 0;
@@ -226,6 +227,8 @@ output_material_usage_and_transition_block()
 	last = splices[i].mm;
     }
 
+    total_used = splices[n_splices-1].mm;
+
     printf("\nFilament usage:\n");
     if (total_waste < total_transition_mm) {
 	printf("Saved %.2f%% filament using infill & support\n", (total_transition_mm - total_waste) / total_transition_mm*100);
@@ -233,11 +236,15 @@ output_material_usage_and_transition_block()
 
     for (i = 0; i < N_DRIVES; i++) {
 	if (used[i]) {
-	    printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.3f m)", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
-	    if (waste[i] < transition_mm[i]) printf(" saved %.2fmm", transition_mm[i] - waste[i]);
+	    printf("T%d: %9.2f mm + %9.2f mm waste => %9.2f mm (%.2f m)", i, used[i]-waste[i], waste[i], used[i], used[i]/1000);
+	    if (waste[i] < transition_mm[i]) printf(" saved %.2f mm", transition_mm[i] - waste[i]);
 	    printf("\n");
 	}
     }
+    printf("-------------------------------------------------------------------\n");
+    printf("    %9.2f mm + %9.2f mm waste => %9.2f mm (%.2f m)", total_used - total_waste, total_waste, total_used, total_used / 1000);
+    if (total_waste < total_transition_mm) printf(" saved %.2f mm", total_transition_mm - total_waste);
+    printf("\n");
 }
 
 static int
