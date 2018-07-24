@@ -197,7 +197,11 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     t->offset = pre_run->offset;
     t->next_move_no_extrusion = pre_run->next_move_no_extrusion;
 
-    t->avail_infill = printer->transition_in_infill && pre_run->trailing_infill_mm > 0 ? pre_run->trailing_infill_mm : 0;
+    if (printer->transition_in_infill && get_active_material(from)->strength >= get_active_material(to)->strength && pre_run->trailing_infill_mm > 0) {
+	t->avail_infill = pre_run->trailing_infill_mm;
+    } else {
+	t->avail_infill = 0;
+    }
     t->avail_support = printer->transition_in_support && run->leading_support_mm > 0 ? run->leading_support_mm : 0;
 
     mm = transition_length(from, to, *total_mm);
