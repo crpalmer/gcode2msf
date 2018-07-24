@@ -143,7 +143,7 @@ layer_add_extra_block_purge(layer_t *l, double extra_mm)
  * After long enough, really reduce them to speed up large prints.
  */
 
-#define EARLY_PING_MM		1000
+#define EARLY_PING_MM		2000
 #define EARLY_PING_THRESHOLD	350
 #define PING_THRESHOLD		425
 #define PING_SECOND_THRESHOLD	(PING_THRESHOLD*2)
