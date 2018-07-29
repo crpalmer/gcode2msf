@@ -523,20 +523,28 @@ preprocess()
     }
 }
 
+static int is_first_layer = 1;
 static double layer_transition_e;
 static double transition_e, transition_starting_e;
 static double transition_pct;
 static double ping_complete_e;
 
 static double
-extrusion_speed()
+base_extrusion_speed()
 {
-    // TODO: Handle layer 1 speed
-
     if (infill_mm_per_min > 0) return infill_mm_per_min;
     if (printer->print_speed > 0) return printer->print_speed;
-    return 30;
+    return 30*60;
 }
+
+static double
+extrusion_speed()
+{
+    double mm_per_min = base_extrusion_speed();
+    if (is_first_layer && mm_per_min > first_layer_mm_per_min) mm_per_min = first_layer_mm_per_min;
+    return mm_per_min;
+}
+
 
 static void
 move_to_and_extrude_common(double x, double y, double z, double e, double speed_multiplier)
@@ -982,7 +990,10 @@ produce_gcode()
 	if (t < n_transitions && token.pos >= transitions[t].offset) {
 	    generate_transition(&layers[l], &transitions[t], &e);
 	    t++;
-	    if (layers[l].transition0 + layers[l].n_transitions == t) l++;
+	    if (layers[l].transition0 + layers[l].n_transitions == t) {
+		l++;
+		is_first_layer = 0;
+	    }
 	    assert(l >= n_layers || (layers[l].transition0 <= t && t < layers[l].transition0 + layers[l].n_transitions));
 	}
 
