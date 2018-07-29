@@ -911,7 +911,7 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 	layer_transition_e = 0;
     }
 
-    pct_to_xy(l, 0, transition_pct, &start_xy);  // TODO: alternate corners
+    pct_to_xy(l, 0, transition_pct, &start_xy);
     move_to(start_xy.x, start_xy.y, NAN);
     if (z_hop) move_to(NAN, NAN, l->z);
 
