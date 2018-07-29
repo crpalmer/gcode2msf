@@ -94,6 +94,7 @@ static double travel_mm_per_min = 0;
 static double s3d_default_speed = 0;
 static double infill_mm_per_min = 0;
 static double first_layer_mm_per_min = 0;
+static double flow_max_mm3_per_sec = DBL_MAX;
 
 static double mm_per_sec_to_per_min(double mm_per_sec)
 {
@@ -117,6 +118,7 @@ struct {
     { "; travel_speed_mm_per_s = ", &travel_mm_per_min, mm_per_sec_to_per_min },
     { "; Sparse Speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
     { "; first_layer_speed_mm_per_s = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
+    { "; flow_max_mm3_per_s = ", &flow_max_mm3_per_sec, NULL },
     /* S3D */
     { ";   extruderRetractionDistance,", &retract_mm, NULL },
     { ";   extruderRetractionZLift,", &z_hop, NULL },
@@ -530,7 +532,7 @@ static double transition_pct;
 static double ping_complete_e;
 
 static double
-base_extrusion_speed()
+base_extrusion_speed(double layer_height)
 {
     if (infill_mm_per_min > 0) return infill_mm_per_min;
     if (printer->print_speed > 0) return printer->print_speed;
@@ -538,23 +540,24 @@ base_extrusion_speed()
 }
 
 static double
-extrusion_speed()
+extrusion_speed(double layer_height)
 {
-    double mm_per_min = base_extrusion_speed();
+    double mm_per_min = base_extrusion_speed(layer_height);
     if (is_first_layer && mm_per_min > first_layer_mm_per_min) mm_per_min = first_layer_mm_per_min;
+    if (speed_to_flow_rate(mm_per_min, layer_height) > flow_max_mm3_per_sec) mm_per_min = flow_rate_to_speed(flow_max_mm3_per_sec, layer_height);
     return mm_per_min;
 }
 
 
 static void
-move_to_and_extrude_common(double x, double y, double z, double e, double speed_multiplier)
+move_to_and_extrude_common(double x, double y, double z, double e, double speed_multiplier, double layer_height)
 {
     fprintf(o, "G1");
     if (isfinite(x)) fprintf(o, " X%f", x);
     if (isfinite(y)) fprintf(o, " Y%f", y);
     if (isfinite(z)) fprintf(o, " Z%f", z);
     if (isfinite(e)) {
-	fprintf(o, " E%f F%f\n", e, extrusion_speed() * speed_multiplier);
+	fprintf(o, " E%f F%f\n", e, extrusion_speed(layer_height) * speed_multiplier);
 	transition_e = e;
     } else {
         fprintf(o, " F%f\n", travel_mm_per_min);
@@ -562,21 +565,21 @@ move_to_and_extrude_common(double x, double y, double z, double e, double speed_
 }
 
 static void
-move_to_and_extrude(double x, double y, double z, double e)
+move_to_and_extrude(double x, double y, double z, double e, double layer_height)
 {
-    return move_to_and_extrude_common(x, y, z, e, 1);
+    return move_to_and_extrude_common(x, y, z, e, 1, layer_height);
 }
 
 static void
-move_to_and_extrude_perimeter(double x, double y, double z, double e)
+move_to_and_extrude_perimeter(double x, double y, double z, double e, double layer_height)
 {
-    return move_to_and_extrude_common(x, y, z, e, printer->perimeter_speed_multiplier);
+    return move_to_and_extrude_common(x, y, z, e, printer->perimeter_speed_multiplier, layer_height);
 }
 
 static void
 move_to(double x, double y, double z)
 {
-    move_to_and_extrude(x, y, z, NAN);
+    move_to_and_extrude(x, y, z, NAN, NAN);
 }
 
 static void
@@ -717,7 +720,7 @@ draw_perimeter(layer_t *l, transition_t *t)
     for (i = 1; i <= 4; i++) {
 	double x = transition_block_corner_x(corner+i, i == 4 ? printer->nozzle / 2 : 0);
 	double y = transition_block_corner_y(corner+i, i == 4 ? printer->nozzle / 2 : 0);
-        move_to_and_extrude_perimeter(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
+        move_to_and_extrude_perimeter(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y), l->h);
 	check_ping_complete(x, y);
 	last_x = x;
 	last_y = y;
@@ -876,7 +879,7 @@ transition_fill(layer_t *l, transition_t *t)
     fprintf(o, "; Filling in the tower portion, density = %f, extrusion-width = %f\n", l->density, printer->nozzle * scale);
 
     for (i = 0; i < n_xye; i++) {
-	move_to_and_extrude(xye[i].x, xye[i].y, NAN, (xye[i].e - start) * scale + start);
+	move_to_and_extrude(xye[i].x, xye[i].y, NAN, (xye[i].e - start) * scale + start, l->h);
 	check_ping_complete(xye[i].x, xye[i].y);
     }
 
@@ -893,11 +896,11 @@ static void
 report_speed(FILE *o, layer_t *l, double mm_per_min)
 {
     double s = mm_per_min / 60;
-    double mm3 = s * printer->nozzle * l->h;
+    double flow = speed_to_flow_rate(mm_per_min, l->h);
 
     fprintf(o, "%.0f mm/sec", s);
-    fprintf(o, " = %.2f filament mm/sec", filament_mm3_to_length(mm3));
-    fprintf(o, " (flow %.1f mm^3/sec)", mm3);
+    fprintf(o, " = %.2f filament mm/sec", filament_mm3_to_length(flow));
+    fprintf(o, " (flow %.1f mm^3/sec)", flow);
 }
 
 static void
@@ -915,10 +918,10 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 
     fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
     fprintf(o, "; Speed: ");
-    report_speed(o, l, extrusion_speed());
+    report_speed(o, l, extrusion_speed(l->h));
     if (l->transition0 == t->num && l->use_perimeter) {
 	fprintf(o, ", perimeter: ");
-	report_speed(o, l, extrusion_speed() * printer->perimeter_speed_multiplier);
+	report_speed(o, l, extrusion_speed(l->h) * printer->perimeter_speed_multiplier);
     }
     fprintf(o, "\n");
 

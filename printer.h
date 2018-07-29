@@ -33,5 +33,7 @@ printer_load(const char *fname);
 
 double filament_length_to_mm3(double len);
 double filament_mm3_to_length(double len);
+double speed_to_flow_rate(double mm_per_min, double layer_height);
+double flow_rate_to_speed(double mm3_per_sec, double layer_height);
 
 #endif

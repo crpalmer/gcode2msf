@@ -130,3 +130,15 @@ filament_mm3_to_length(double mm3)
 {
     return mm3 / filament_cross_section_area();
 }
+
+double
+speed_to_flow_rate(double mm_per_min, double layer_height)
+{
+    return mm_per_min / 60 * printer->nozzle * layer_height;
+}
+
+double
+flow_rate_to_speed(double mm3_per_sec, double layer_height)
+{
+    return mm3_per_sec * 60 / printer->nozzle / layer_height;
+}
