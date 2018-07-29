@@ -890,6 +890,17 @@ transition_fill(layer_t *l, transition_t *t)
 }
 
 static void
+report_speed(FILE *o, layer_t *l, double mm_per_min)
+{
+    double s = mm_per_min / 60;
+    double mm3 = s * printer->nozzle * l->h;
+
+    fprintf(o, "%.0f mm/sec", s);
+    fprintf(o, " = %.2f filament mm/sec", filament_mm3_to_length(mm3));
+    fprintf(o, " (flow %.1f mm^3/sec)", mm3);
+}
+
+static void
 generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 {
     double original_e;
@@ -903,6 +914,13 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     start_total_e = e->total_e + t->mm_from_runs;
 
     fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
+    fprintf(o, "; Speed: ");
+    report_speed(o, l, extrusion_speed());
+    if (l->transition0 == t->num && l->use_perimeter) {
+	fprintf(o, ", perimeter: ");
+	report_speed(o, l, extrusion_speed() * printer->perimeter_speed_multiplier);
+    }
+    fprintf(o, "\n");
 
     if (last_fan > 0) fprintf(o, "M107\n");
 
