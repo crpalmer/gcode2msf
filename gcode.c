@@ -532,7 +532,6 @@ static double
 extrusion_speed()
 {
     // TODO: Handle layer 1 speed
-    // TODO: Handle perimeter speed
 
     if (infill_mm_per_min > 0) return infill_mm_per_min;
     if (printer->print_speed > 0) return printer->print_speed;
@@ -540,18 +539,30 @@ extrusion_speed()
 }
 
 static void
-move_to_and_extrude(double x, double y, double z, double e)
+move_to_and_extrude_common(double x, double y, double z, double e, double speed_multiplier)
 {
     fprintf(o, "G1");
     if (isfinite(x)) fprintf(o, " X%f", x);
     if (isfinite(y)) fprintf(o, " Y%f", y);
     if (isfinite(z)) fprintf(o, " Z%f", z);
     if (isfinite(e)) {
-	fprintf(o, " E%f F%f\n", e, extrusion_speed());
+	fprintf(o, " E%f F%f\n", e, extrusion_speed() * speed_multiplier);
 	transition_e = e;
     } else {
         fprintf(o, " F%f\n", travel_mm_per_min);
     }
+}
+
+static void
+move_to_and_extrude(double x, double y, double z, double e)
+{
+    return move_to_and_extrude_common(x, y, z, e, 1);
+}
+
+static void
+move_to_and_extrude_perimeter(double x, double y, double z, double e)
+{
+    return move_to_and_extrude_common(x, y, z, e, printer->perimeter_speed_multiplier);
 }
 
 static void
@@ -698,7 +709,7 @@ draw_perimeter(layer_t *l, transition_t *t)
     for (i = 1; i <= 4; i++) {
 	double x = transition_block_corner_x(corner+i, i == 4 ? printer->nozzle / 2 : 0);
 	double y = transition_block_corner_y(corner+i, i == 4 ? printer->nozzle / 2 : 0);
-        move_to_and_extrude(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
+        move_to_and_extrude_perimeter(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y));
 	check_ping_complete(x, y);
 	last_x = x;
 	last_y = y;

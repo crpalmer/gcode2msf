@@ -26,6 +26,7 @@ static struct {
     { "transitionInInfill", offsetof(printer_t, transition_in_infill), BOOLEAN, -1} ,
     { "transitionInSupport", offsetof(printer_t, transition_in_support), BOOLEAN, -1} ,
     { "printSpeed", offsetof(printer_t, print_speed), DOUBLE, -1 },
+    { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed_multiplier), DOUBLE, -1},
     { "minDensity", offsetof(printer_t, min_density), DOUBLE, -1 },
     { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed), DOUBLE, -1 },
     { "loadingOffset", offsetof(printer_t, loading_offset), INT, -1 },
