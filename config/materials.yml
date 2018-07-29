@@ -2,7 +2,7 @@ Default PLA:
   type: PLA
   combinations:
     Default PLA:
-      heatFactor: 3
+      heatFactor: 4
       compressionFactor: 2
       reverse: false
     Default PETG:
@@ -14,7 +14,7 @@ Default PLA:
       compressionFactor: 3
       reverse: false
     Polysupport:
-      heatFactor: 6
+      heatFactor: 9
       compressionFactor: 2
       reverse: false
 Default PETG:
@@ -59,7 +59,7 @@ Polysupport:
   type: PLA
   combinations:
     Default PLA:
-      heatFactor: 6
+      heatFactor: 9
       compressionFactor: 2
       reverse: false
     Default PETG:
@@ -71,6 +71,6 @@ Polysupport:
       compressionFactor: 3
       reverse: false
     Polysupport:
-      heatFactor: 6
+      heatFactor: 9
       compressionFactor: 2
       reverse: false
