@@ -22,6 +22,7 @@ typedef struct {
 	START,
 	OTHER,
 	FAN,
+	KISS_EXT,
 	DONE
     } t;
     union {
@@ -290,6 +291,11 @@ get_next_token_wrapped()
 	    t.t = START;
 	    return t;
 	}
+	if (STRNCMP(buf, ";    Ext ") == 0 && sscanf(buf, ";    Ext %d =  %*f mm", &t.x.tool) == 1) {
+	    t.t = KISS_EXT;
+	    t.x.tool--;
+	    return t;
+	}
 	if (buf[0] == 'T' && isdigit(buf[1])) {
 	    t.t = TOOL;
 	    t.x.tool = atoi(&buf[1]);
@@ -331,6 +337,7 @@ get_next_token()
 	case TOOL: printf("TOOL %d\n", t.x.tool); break;
 	case FAN: printf("FAN %f\n", t.x.fan); break;
 	case OTHER: printf("%s", buf); break;
+	case KISS_EXT: printf("KISS_EXT %d\n", t.x.tool); break;
 	default: printf("*** UNKNOWN TOKEN ****\n");
         }
     }
@@ -519,6 +526,7 @@ preprocess()
 	    break;
 	case DONE:
 	    return;
+	case KISS_EXT:
 	case OTHER:
 	    break;
 	}
@@ -530,6 +538,7 @@ static double layer_transition_e;
 static double transition_e, transition_starting_e;
 static double transition_pct;
 static double ping_complete_e;
+static double total_ext[N_DRIVES];
 
 static double
 base_extrusion_speed(double layer_height)
@@ -607,6 +616,7 @@ add_splice(int drive, double mm, double pre_mm, extrusion_state_t *e)
     splices[n_splices].mm = mm + pre_mm;
     splices[n_splices].waste = e->acc_waste + pre_mm;
     splices[n_splices].transition_mm = e->acc_transition + pre_mm;
+    total_ext[drive] += splices[n_splices].mm - (n_splices == 0 ? 0 : splices[n_splices-1].mm);
     n_splices++;
 
     e->acc_waste = e->acc_transition = -pre_mm;
@@ -1042,6 +1052,12 @@ produce_gcode()
 	    add_splice(tool, e.total_e, 0, &e);
 	    splices[n_splices-1].waste += transition_final_waste;
 	    return;
+	case KISS_EXT: {
+	    double mm = total_ext[token.x.tool];
+	    if (token.x.tool == tool) mm += transition_final_mm + transition_final_waste;
+	    fprintf(o, ";    Ext %d = %8.2f mm  (%.03f cm^3)\n", token.x.tool, mm, filament_length_to_mm3(mm)/10/10/10);
+	    break;
+	}
 	case SET_E:
 	    last_e = token.x.e;
 	    fprintf(o, "%s", buf);
