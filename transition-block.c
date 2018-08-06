@@ -263,6 +263,7 @@ compute_transition_tower()
     }
     transition_final_mm = mm_from_runs;
     transition_final_waste = (printer->bowden_len > 0 ? printer->bowden_len : 0) + EXTRA_FILAMENT;
+    transition_final_waste += 0.01 * transition_final_mm;
 }
 
 static void
