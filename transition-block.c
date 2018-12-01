@@ -339,6 +339,7 @@ place_transition_block_delta()
     bb_t model_bb;
     double d[4];
     double mid[2] = { 0, 0 };
+    double x1, x2, y1, y2;
 
     find_model_bb_to_tower_height(&model_bb);
 
@@ -348,6 +349,16 @@ place_transition_block_delta()
     d[3] = model_bb.y[1];
 
     place_transition_block_common(&model_bb, d, mid);
+
+    x1 = transition_block.x;
+    y1 = transition_block.y;
+    x2 = x1 + transition_block.w;
+    y2 = y1 + transition_block.h;
+
+    if (sqrt(x1*x1 + y1*y1) > printer->diameter/2 || sqrt(x2*x2 + y2*y2) > printer->diameter/2) {
+	fprintf(stderr, "Failed to place transition block: %.1f,%.1f %.1f,%.1f\n", x1, y1, x2, y2);
+	exit(1);
+    }
 }
 
 static void
@@ -365,6 +376,11 @@ place_transition_block_cartesian()
     d[3] = printer->bed_y - model_bb.y[1];
 
     place_transition_block_common(&model_bb, d, mid);
+
+    if (transition_block.x < 0 || transition_block.y < 0 || transition_block.x + transition_block.w > printer->bed_x || transition_block.y + transition_block.h > printer->bed_y) {
+	fprintf(stderr, "Failed to place transition block\n");
+	exit(1);
+    }
 }
 
 static void
