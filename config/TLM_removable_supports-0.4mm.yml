@@ -1,5 +1,5 @@
 version: 2
-name: TLM - 0.6mm nozzle
+name: TLM removable supports
 preset: tevo_littlemonster
 gpxProfile: false
 gpxConfigPath: ''
@@ -11,7 +11,7 @@ volumetric: false
 independentExtruderAxes: false
 extruderStepsPerMM: 0
 filamentDiameter: 1.75
-nozzleDiameter: 0.6
+nozzleDiameter: 0.4
 extruderCount: 1
 printExtruder: false
 printBed:
@@ -27,14 +27,14 @@ bowdenTube: 700
 firmwarePurge: 0
 transitions:
   method: 1
-  purgeLength: 120
-  minPurgeLength: 120
-  initialPurgeLength: 120
-  purgeTarget: 0.33
+  purgeLength: 100
+  minPurgeLength: 100
+  initialPurgeLength: 100
+  purgeTarget: 0.2
   transitionInInfill: true
   transitionInSupport: true
   towers:
-    printSpeed: 60
+    printSpeed: 70
     extrusionWidth: auto
     minDensity: 0.05
     minBottomDensity: 0.8
@@ -56,6 +56,6 @@ pings:
   pingOffTower: true
   mechanicalPingGCode: ''
 calibration:
-  loadingOffset: 25588
-  printValue: 151050.000
-  calibrationGCodeLength: 5000
+  loadingOffset: 25714
+  printValue: 118144
+  calibrationGCodeLength: 3918.22

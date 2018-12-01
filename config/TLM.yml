@@ -1,5 +1,5 @@
 version: 2
-name: TLM
+name: TLM - 0.6mm nozzle
 preset: tevo_littlemonster
 gpxProfile: false
 gpxConfigPath: ''
@@ -11,7 +11,7 @@ volumetric: false
 independentExtruderAxes: false
 extruderStepsPerMM: 0
 filamentDiameter: 1.75
-nozzleDiameter: 0.4
+nozzleDiameter: 0.6
 extruderCount: 1
 printExtruder: false
 printBed:
@@ -56,6 +56,6 @@ pings:
   pingOffTower: true
   mechanicalPingGCode: ''
 calibration:
-  loadingOffset: 25543
-  printValue: 118144
-  calibrationGCodeLength: 3918.22
+  loadingOffset: 25588
+  printValue: 151050.000
+  calibrationGCodeLength: 5000
