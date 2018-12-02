@@ -425,7 +425,7 @@ transition_block_create_from_runs()
 	iterations++;
 	place_transition_block();
     } while (! fix_constraints());
-    bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h);
+    bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h, 'T');
     printf("It took %d iterations to stabilize the block\n", iterations);
 }
 

@@ -23,6 +23,7 @@
  */
 
 #define CELL_SIZE	5
+#define USED		'*'
 
 typedef struct {
     double	z;
@@ -87,7 +88,7 @@ static void mark(bed_usage_t *b, double x0, double y0)
 
     if (! CELL(b, b->cur->used, x, y)) {
          b->cur->n_used++;
-         CELL(b, b->cur->used, x, y) = 1;
+         CELL(b, b->cur->used, x, y) = USED;
     }
 }
 
@@ -156,7 +157,7 @@ print_bed(bed_usage_t *b, unsigned char *used, FILE *f)
 
     for (y = b->h-1; y >= 0; y--) {
 	for (x = 0; x < b->w; x++) {
-	    char sym = CELL(b, used, x, y) ? '*' : ' ';
+	    char sym = CELL(b, used, x, y) ? CELL(b, used, x, y) : ' ';
 	    if (printer->circular) {
 		double dx = bed_xy_to_xy(x);
 		double dy = bed_xy_to_xy(y);
