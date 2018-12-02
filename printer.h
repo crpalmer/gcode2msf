@@ -36,4 +36,13 @@ double filament_mm3_to_length(double len);
 double speed_to_flow_rate(double mm_per_min, double layer_height);
 double flow_rate_to_speed(double mm3_per_sec, double layer_height);
 
+static inline int printer_is_valid(double x, double y)
+{
+    if (printer->circular) {
+	return sqrt(x*x + y*y) <= printer->diameter/2;
+    } else {
+	return x <= printer->bed_x && y <= printer->bed_y;
+    }
+}
+
 #endif

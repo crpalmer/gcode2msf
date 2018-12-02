@@ -68,15 +68,45 @@ transition_block_area()
     return area;
 }
 
-void
-transition_block_size(double xy[2])
+int
+transition_block_size(double xy[2], int strategy)
 {
     double area = transition_block_area();
     double sqrt_area = sqrt(area);
-    double ratio = sqrt((1 + sqrt(5))/2);	// Golden ratio
-    xy[0] = sqrt_area / ratio;
-    xy[1] = sqrt_area * ratio;
+
+    switch (strategy) {
+    case 0: {		// golden ratio
+	double ratio = sqrt((1 + sqrt(5))/2);	// Golden ratio
+	xy[0] = sqrt_area / ratio;
+	xy[1] = sqrt_area * ratio;
+	break;
+    }
+    case 1:		// square
+	xy[0] = sqrt_area;
+	xy[1] = sqrt_area;
+	break;
+    case 2:		// wide
+	xy[0] = sqrt_area * 2;
+	xy[1] = area / xy[0];
+	break;
+    case 3:		// tall
+	xy[1] = sqrt_area * 2;
+	xy[0] = area / xy[1];
+	break;
+    case 4:		// extra wide
+	xy[0] = sqrt_area * 3;
+	xy[1] = area / xy[0];
+	break;
+    case 5:		// extra tall
+	xy[1] = sqrt_area * 3;
+	xy[0] = area / xy[1];
+	break;
+    default:
+	return 0;
+    }
+
     assert(fabs(xy[0] * xy[1] - area) < 0.0001);
+    return 1;
 }
 
 static double
@@ -173,7 +203,6 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     if (n_layers == 0 || z > layers[n_layers-1].z) {
 	layer = &layers[n_layers];
 	layer->num = n_layers;
-	bb_init(&layer->bb);
 	layer->z = z;
 	layer->h = z - (n_layers ? layers[n_layers-1].z : 0);
 	layer->transition0 = n_transitions;
@@ -226,9 +255,6 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     }
 
     (*total_mm) += t->pre_mm + t->post_mm;
-
-    bb_add_bb(&layer->bb, &pre_run->bb);
-    bb_add_bb(&layer->bb, &run->bb);
 }
 
 static void
@@ -281,114 +307,27 @@ prune_transition_tower()
 }
 
 static void
-find_model_bb_to_tower_height(bb_t *model_bb)
-{
-    int i;
-
-    bb_init(model_bb);
-
-    for (i = 0; i < n_layers; i++) {
-        bb_add_bb(model_bb, &layers[i].bb);
-    }
-}
-
-#define BLOCK_SEP 5
-
-static void
-place_transition_block_common(bb_t *model_bb, double *d, double mid[2])
-{
-    double size[2];
-    int mn = 0;
-    int i;
-
-    transition_block_size(size);
-
-    for (i = 1; i < 4; i++) if (d[i] < d[mn]) mn = i;
-
-    switch(mn) {
-    case 0:
-	transition_block.x = model_bb->x[0] - BLOCK_SEP - size[0];
-	transition_block.y = mid[1]-size[1]/2;
-	transition_block.w = size[0];
-	transition_block.h = size[1];
-	break;
-    case 1:
-	transition_block.x = model_bb->x[1] + BLOCK_SEP;
-	transition_block.y = mid[1]-size[1]/2;
-	transition_block.w = size[0];
-	transition_block.h = size[1];
-	break;
-    case 2:
-	transition_block.x = mid[0]-size[1]/2;
-	transition_block.y = model_bb->y[0] - BLOCK_SEP - size[0];
-	transition_block.w = size[1];
-	transition_block.h = size[0];
-	break;
-    case 3:
-	transition_block.x = mid[0]-size[1]/2;
-	transition_block.y = model_bb->y[1] + BLOCK_SEP;
-	transition_block.w = size[1];
-	transition_block.h = size[0];
-	break;
-    }
-}
-
-static void
-place_transition_block_delta()
-{
-    bb_t model_bb;
-    double d[4];
-    double mid[2] = { 0, 0 };
-    double x1, x2, y1, y2;
-
-    find_model_bb_to_tower_height(&model_bb);
-
-    d[0] = -model_bb.x[0];
-    d[1] = model_bb.x[1];
-    d[2] = -model_bb.y[0];
-    d[3] = model_bb.y[1];
-
-    place_transition_block_common(&model_bb, d, mid);
-
-    x1 = transition_block.x;
-    y1 = transition_block.y;
-    x2 = x1 + transition_block.w;
-    y2 = y1 + transition_block.h;
-
-    if (sqrt(x1*x1 + y1*y1) > printer->diameter/2 || sqrt(x2*x2 + y2*y2) > printer->diameter/2) {
-	fprintf(stderr, "Failed to place transition block: %.1f,%.1f %.1f,%.1f\n", x1, y1, x2, y2);
-	exit(1);
-    }
-}
-
-static void
-place_transition_block_cartesian()
-{
-    bb_t model_bb;
-    double d[4];
-    double mid[2] = { printer->bed_x / 2, printer->bed_y / 2 };
-
-    find_model_bb_to_tower_height(&model_bb);
-
-    d[0] = model_bb.x[0];
-    d[1] = printer->bed_x - model_bb.x[1];
-    d[2] = model_bb.y[0];
-    d[3] = printer->bed_y - model_bb.y[1];
-
-    place_transition_block_common(&model_bb, d, mid);
-
-    if (transition_block.x < 0 || transition_block.y < 0 || transition_block.x + transition_block.w > printer->bed_x || transition_block.y + transition_block.h > printer->bed_y) {
-	fprintf(stderr, "Failed to place transition block\n");
-	exit(1);
-    }
-}
-
-static void
 place_transition_block()
 {
-    if (printer->circular) place_transition_block_delta();
-    else place_transition_block_cartesian();
-    transition_block.area = transition_block_area();
+    double x, y;
+    double z = layers[n_layers-1].z;
+    int strategy = 0;
+    double size[2];
+
+    while (transition_block_size(size, strategy++)) {
+	if (size[0] > printer->nozzle*4 && size[1] > printer->nozzle*4 &&
+	    bed_usage_place_object(bed_usage, size[0], size[1], z, &x, &y)) {
+	    transition_block.x = x;
+	    transition_block.y = y;
+	    transition_block.w = size[0];
+	    transition_block.h = size[1];
+	    transition_block.area = size[0] * size[1];
+	    return;
+	}
+    }
+
+    fprintf(stderr, "Failed to place transition block.  Aborting.\n");
+    exit(1);
 }
 
 static double
@@ -486,6 +425,7 @@ transition_block_create_from_runs()
 	iterations++;
 	place_transition_block();
     } while (! fix_constraints());
+    bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h);
     printf("It took %d iterations to stabilize the block\n", iterations);
 }
 

@@ -3,7 +3,7 @@ EXECS =gcode2msf msf2text
 all:	$(EXECS)
 
 GCODE2MSF_OBJS = \
-	bb.o \
+	bed-usage.o \
 	gcode.o \
 	gcode2msf.o \
 	materials.o \

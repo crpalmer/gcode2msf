@@ -5,6 +5,7 @@
 #include <math.h>
 #include <float.h>
 #include <assert.h>
+#include "bed-usage.h"
 #include "gcode.h"
 #include "printer.h"
 #include "transition-block.h"
@@ -70,7 +71,6 @@ static double last_fan = 0;
 static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
 static path_t last_e_path = NORMAL, cur_path = NORMAL;
 static double total_e = 0;
-static bb_t bb;
 static int tool = 0;
 static int seen_tool = 0;
 static int n_used_tools = 0;
@@ -82,6 +82,7 @@ static int started = 0;
 run_t runs[MAX_RUNS];
 int n_runs = 0;
 int used_tool[N_DRIVES] = { 0, };
+bed_usage_t *bed_usage;
 
 splice_t splices[MAX_RUNS];
 int n_splices = 0;
@@ -363,7 +364,6 @@ reset_state()
     start_e = last_e;
     acc_e = 0;
     seen_ping = 0;
-    bb_init(&bb);
     support_start_e = support_end_e = infill_start_e = NAN;
 }
 
@@ -396,7 +396,6 @@ add_run(long offset)
 	    n_used_tools++;
 	}
 
-	runs[n_runs].bb = bb;
 	runs[n_runs].z = last_e_z;
 	runs[n_runs].e = acc_e;
 	runs[n_runs].t = tool;
@@ -418,6 +417,9 @@ preprocess()
     int no_extrusion_after_last_e = 0;
     int *check_next_move = NULL;
 
+    if (bed_usage) bed_usage_destroy(bed_usage);
+    bed_usage = bed_usage_new();
+
     reset_state();
     while (1) {
 	token_t t = get_next_token();
@@ -429,6 +431,7 @@ preprocess()
 	    }
 	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
 		accumulate();
+		bed_usage_new_layer(bed_usage, t.x.move.z);
 		if (started && isfinite(last_e_z)) {
 		    add_run(after_last_e_offset);
 		    runs[n_runs-1].next_move_no_extrusion = no_extrusion_after_last_e;
@@ -472,7 +475,7 @@ preprocess()
 		check_next_move = &no_extrusion_after_last_e;
 	    }
 
-	    bb_add_point(&bb, t.x.move.x, t.x.move.y);
+	    if (t.x.move.e > last_e) bed_usage_extrude(bed_usage, last_x, last_y, t.x.move.x, t.x.move.y);
 
 	    update_last_state(&t);
 	    break;

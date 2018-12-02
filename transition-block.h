@@ -5,7 +5,6 @@
 
 typedef struct {
     int    num;
-    bb_t   bb;
     double z;
     double h;
     int transition0;
@@ -43,8 +42,6 @@ extern double transition_final_mm;
 extern double transition_final_waste;
 
 extern int reduce_pings;
-
-void transition_block_size(double xy[2]);
 
 void transition_block_create_from_runs();
 

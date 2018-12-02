@@ -1,13 +1,12 @@
 #ifndef __GCODE_H__
 #define __GCODE_H__
 
-#include "bb.h"
+#include "bed-usage.h"
 
 #define MAX_RUNS        100000
 #define N_DRIVES 4
 
 typedef struct {
-    bb_t   bb;
     double z;
     double e;
     int    t;
@@ -31,6 +30,7 @@ typedef struct {
 extern run_t runs[MAX_RUNS];
 extern int n_runs;
 extern int used_tool[N_DRIVES];
+extern bed_usage_t *bed_usage;
 
 extern splice_t splices[MAX_RUNS];
 extern int n_splices;
