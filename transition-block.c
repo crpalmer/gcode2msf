@@ -451,13 +451,17 @@ transition_block_create_from_runs()
     int iterations = 0;
     compute_transition_tower();
     prune_transition_tower();
-    do {
-	iterations++;
-	place_transition_block();
-    } while (! fix_constraints());
-    bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h, 'T');
+    if (n_transitions > 0) {
+	do {
+	    iterations++;
+	    place_transition_block();
+	} while (! fix_constraints());
+	bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h, 'T');
+	printf("It took %d iterations to stabilize the block\n", iterations);
+    } else {
+	transition_final_waste = 0;
+    }
     if (printer->prime_mm > 0) place_prime();
-    printf("It took %d iterations to stabilize the block\n", iterations);
 }
 
 void
