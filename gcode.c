@@ -507,13 +507,16 @@ preprocess()
 		    fprintf(stderr, "** ERROR *** Tool change before in prefix gcode\n");
 		    exit(1);
 		}
-		accumulate();
-		add_run(t.pos);
-		check_next_move = &runs[n_runs-1].next_move_no_extrusion;
-		no_extrusion_after_last_e = 0;
-		if (validate_only && acc_e == 0) printf("Z %.02f ******* Tool change with no extrusion, chroma may screw this up\n", last_z);
-		show_extrusion('+', 0);
-		reset_state();
+		if (acc_e == 0) {
+		    fprintf(stderr, "Z %.02f ******* Tool change with no extrusion, chroma may screw this up\n", last_z);
+		} else {
+		    accumulate();
+		    add_run(t.pos);
+		    check_next_move = &runs[n_runs-1].next_move_no_extrusion;
+		    no_extrusion_after_last_e = 0;
+		    show_extrusion('+', 0);
+		}
+	        reset_state();
 		tool = t.x.tool;
 		seen_tool = 1;
 	    }
