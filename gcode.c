@@ -1095,7 +1095,8 @@ produce_gcode()
 	case KISS_EXT: {
 	    double mm = total_ext[token.x.tool];
 	    if (token.x.tool == tool) mm += transition_final_mm + transition_final_waste;
-	    fprintf(o, ";    Ext %d = %8.2f mm  (%.03f cm^3)\n", token.x.tool, mm, filament_length_to_mm3(mm)/10/10/10);
+	    if (transition_block.area == 0) mm += printer->prime_mm;
+	    fprintf(o, ";    Ext %d = %8.2f mm  (%.03f cm^3)\n", token.x.tool+1, mm, filament_length_to_mm3(mm)/10/10/10);
 	    break;
 	}
 	case SET_E:
