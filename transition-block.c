@@ -326,8 +326,10 @@ place_transition_block()
 	    transition_block.area = size[0] * size[1];
 	    return;
 	}
+	fprintf(stderr, "Failed to place transition block %fx%f.  Aborting.\n", size[0], size[1]);
     }
 
+    bed_usage_print(bed_usage, stderr);
     fprintf(stderr, "Failed to place transition block.  Aborting.\n");
     exit(1);
 }
