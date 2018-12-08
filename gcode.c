@@ -199,9 +199,9 @@ check_for_simplify3d_path_types()
     for (p = buf+1; *p && (isspace(*p) || islower(*p)); p++) {}
     if (*p) return;
 
-    if (STRNCMP(buf, "; infill") == 0) cur_path = INFILL;
-    else if (STRNCMP(buf, "; support") == 0) cur_path = SUPPORT;
-    else if (STRNCMP(buf, "; dense support") == 0) cur_path = SUPPORT;
+    if (STRNCMP(buf, "; infill") == 0 || STRNCMP(buf, "; feature infill") == 0) cur_path = INFILL;
+    else if (STRNCMP(buf, "; support") == 0 || STRNCMP(buf, "; feature support") == 0) cur_path = SUPPORT;
+    else if (STRNCMP(buf, "; dense support") == 0 || STRNCMP(buf, "; feature dense support") == 0) cur_path = SUPPORT;
     else cur_path = NORMAL;
 }
 
