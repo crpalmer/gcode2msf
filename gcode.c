@@ -429,7 +429,7 @@ preprocess()
 		*check_next_move = (t.x.move.e == last_e);
 		check_next_move = NULL;
 	    }
-	    if (t.x.move.e != last_e && t.x.move.z != last_e_z) {
+	    if (t.x.move.e > last_e && t.x.move.z != last_e_z) {
 		accumulate();
 		bed_usage_new_layer(bed_usage, t.x.move.z);
 		if (started && isfinite(last_e_z)) {
