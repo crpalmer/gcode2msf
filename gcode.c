@@ -558,8 +558,8 @@ static double
 extrusion_speed(double layer_height)
 {
     double mm_per_min = base_extrusion_speed(layer_height);
-    if (is_first_layer && mm_per_min > first_layer_mm_per_min) mm_per_min = first_layer_mm_per_min;
-    if (speed_to_flow_rate(mm_per_min, layer_height) > flow_max_mm3_per_sec) mm_per_min = flow_rate_to_speed(flow_max_mm3_per_sec, layer_height);
+    if (is_first_layer && mm_per_min > first_layer_mm_per_min && first_layer_mm_per_min > 0) mm_per_min = first_layer_mm_per_min;
+    if (speed_to_flow_rate(mm_per_min, layer_height) > flow_max_mm3_per_sec && flow_max_mm3_per_sec > 0) mm_per_min = flow_rate_to_speed(flow_max_mm3_per_sec, layer_height);
     return mm_per_min;
 }
 
