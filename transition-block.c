@@ -74,33 +74,34 @@ transition_block_size(double xy[2], int strategy)
 {
     double area = transition_block_area();
     double sqrt_area = sqrt(area);
+    int i = strategy % 2, j = (i+1) % 2;
 
-    switch (strategy) {
+    switch (strategy / 2) {
     case 0: {		// golden ratio
 	double ratio = sqrt((1 + sqrt(5))/2);	// Golden ratio
-	xy[0] = sqrt_area / ratio;
-	xy[1] = sqrt_area * ratio;
+	xy[i] = sqrt_area / ratio;
+	xy[j] = sqrt_area * ratio;
 	break;
     }
     case 1:		// square
-	xy[0] = sqrt_area;
-	xy[1] = sqrt_area;
+	xy[i] = sqrt_area;
+	xy[j] = sqrt_area;
 	break;
     case 2:		// wide
-	xy[0] = sqrt_area * 2;
-	xy[1] = area / xy[0];
+	xy[i] = sqrt_area * 2;
+	xy[j] = area / xy[i];
 	break;
     case 3:		// tall
-	xy[1] = sqrt_area * 2;
-	xy[0] = area / xy[1];
+	xy[j] = sqrt_area * 2;
+	xy[i] = area / xy[j];
 	break;
     case 4:		// extra wide
-	xy[0] = sqrt_area * 3;
-	xy[1] = area / xy[0];
+	xy[i] = sqrt_area * 3;
+	xy[j] = area / xy[i];
 	break;
     case 5:		// extra tall
-	xy[1] = sqrt_area * 3;
-	xy[0] = area / xy[1];
+	xy[j] = sqrt_area * 3;
+	xy[i] = area / xy[j];
 	break;
     default:
 	return 0;
