@@ -20,6 +20,7 @@ transition_block_t transition_block;
 int reduce_pings = 0;
 double transition_final_mm;
 double transition_final_waste;
+prime_info_t prime_info;
 
 #define MIN_FIRST_SPLICE_LEN	141	/* There appears to be some epsilon error with 140 causing it to error */
 #define MIN_SPLICE_LEN		 80
@@ -415,6 +416,35 @@ fix_constraints()
     return ! bad;
 }
 
+#define MAX_PRIME_LINES	20
+
+static void
+place_prime()
+{
+    int n;
+    double mm3 = filament_length_to_mm3(printer->prime_mm);
+    double len = mm3 / printer->nozzle / layers[0].h;
+
+    for (n = 1; n <= MAX_PRIME_LINES; n++) {
+	double w = len / n;
+	double h = n * printer->nozzle;
+	double x, y;
+
+	if (bed_usage_place_and_add_object(bed_usage, w, h, -1, 'P', &x, &y)) {
+	    prime_info.len = w;
+	    prime_info.n   = n;
+	    prime_info.x   = x;
+	    prime_info.y   = y;
+	    prime_info.e   = filament_mm3_to_length(w * printer->nozzle * layers[0].h);
+	    transitions[0].mm_from_runs += printer->prime_mm;
+	    printf("Placed priming at %f,%f with %d lines of length %f\n", x, y, n, w);
+	    return;
+	}
+    }
+
+    fprintf(stderr, "WARNING: failed to place purge lines\n");
+}
+
 void
 transition_block_create_from_runs()
 {
@@ -426,6 +456,7 @@ transition_block_create_from_runs()
 	place_transition_block();
     } while (! fix_constraints());
     bed_usage_add_object(bed_usage, transition_block.x, transition_block.y, transition_block.w, transition_block.h, 'T');
+    if (printer->prime_mm > 0) place_prime();
     printf("It took %d iterations to stabilize the block\n", iterations);
 }
 

@@ -33,6 +33,12 @@ typedef struct {
     double area;
 } transition_block_t;
 
+typedef struct {
+    double x, y, e;
+    int n;
+    double len;
+} prime_info_t;
+
 extern layer_t layers[MAX_RUNS];
 extern int n_layers;
 extern transition_t transitions[MAX_RUNS];
@@ -40,6 +46,7 @@ extern int n_transitions;
 extern transition_block_t transition_block;
 extern double transition_final_mm;
 extern double transition_final_waste;
+extern prime_info_t prime_info;
 
 extern int reduce_pings;
 

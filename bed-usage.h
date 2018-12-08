@@ -13,6 +13,8 @@ int bed_usage_place_object(bed_usage_t *b, double w, double h, double to_z, doub
 
 void bed_usage_add_object(bed_usage_t *b, double x, double y, double w, double h, char usage);
 
+int bed_usage_place_and_add_object(bed_usage_t *b, double w, double h, double to_z, char usage, double *x_res, double *y_res);
+
 void bed_usage_print(bed_usage_t *, FILE *);
 
 void bed_usage_destroy(bed_usage_t *);

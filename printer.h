@@ -24,6 +24,7 @@ typedef struct {
     double calibration_len;
     double min_bottom_density;
     int ping_off_tower;
+    double prime_mm;
 } printer_t;
 
 extern printer_t *printer;

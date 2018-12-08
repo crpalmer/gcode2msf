@@ -179,7 +179,7 @@ get_usage_to_z(bed_usage_t *b, double z)
     expanded = calloc(sizeof(*expanded), b->w * b->h);
 
     for (i = 0; i < b->n_layers; i++) {
-	if (b->l[i].z <= z) {
+	if (i == 0 || b->l[i].z <= z) {
 	    for (j = 0; j < b->w * b->h; j++) used[j] |= b->l[i].used[j];
 	}
     }
@@ -242,7 +242,7 @@ next_location:
     return isfinite(best_d);
 }
 
-void bed_usage_add_object(bed_usage_t *b, double x0, double y0, double w0, double h0)
+void bed_usage_add_object(bed_usage_t *b, double x0, double y0, double w0, double h0, char usage)
 {
     int x = xy_to_bed_xy(x0);
     int y = xy_to_bed_xy(y0);
@@ -252,10 +252,17 @@ void bed_usage_add_object(bed_usage_t *b, double x0, double y0, double w0, doubl
     
     for (dx = 0; dx < w; dx++) {
 	for (dy = 0; dy < h; dy++) {
-	    CELL(b, b->l[0].used, x + dx, y + dy) = 1;
+	    CELL(b, b->l[0].used, x + dx, y + dy) = usage;
 	}
     }
 
+}
+
+int bed_usage_place_and_add_object(bed_usage_t *b, double w, double h, double to_z, char usage, double *x, double *y)
+{
+    if (! bed_usage_place_object(b, w, h, to_z, x, y)) return 0;
+    bed_usage_add_object(b, *x, *y, w, h, usage);
+    return 1;
 }
 
 void bed_usage_print(bed_usage_t *b, FILE *f)
