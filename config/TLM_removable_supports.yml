@@ -59,3 +59,4 @@ calibration:
   loadingOffset: 33619
   printValue: 113053
   calibrationGCodeLength: 3761.4
+prime_mm: 5

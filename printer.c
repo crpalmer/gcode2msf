@@ -34,6 +34,7 @@ static struct {
     { "calibrationGCodeLength", offsetof(printer_t, calibration_len), DOUBLE, -1 },
     { "minBottomDensity", offsetof(printer_t, min_bottom_density), DOUBLE, -1 },
     { "pingOffTower", offsetof(printer_t, ping_off_tower), BOOLEAN, -1 },
+    { "prime_mm", offsetof(printer_t, prime_mm), DOUBLE, -1 },
 };
 
 #define N_KEYS (sizeof(keys) / sizeof(keys[0]))

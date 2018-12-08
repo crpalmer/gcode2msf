@@ -29,6 +29,7 @@ typedef struct {
     union {
 	struct {
 	    double x, y, z, e, f;
+	    int changes_position;
 	} move;
 	struct {
 	    int num, step;
@@ -150,6 +151,14 @@ find_arg(const char *buf, char arg, double *val)
     return 0;
 }
 
+static int
+has_arg(const char *buf, char arg)
+{
+    double v;
+
+    return find_arg(buf, arg, &v);
+}
+
 static void
 check_for_gcode_params()
 {
@@ -226,6 +235,7 @@ get_next_token_wrapped()
 	next_pos = ftell(f);
 	if (STRNCMP(buf, "G1 ") == 0) {
 	    t.t = MOVE;
+	    t.x.move.changes_position = has_arg(buf, 'X') || has_arg(buf, 'Y') || has_arg(buf, 'Z');
 	    if (! find_arg(buf, 'X', &t.x.move.x)) t.x.move.x = last_x;
 	    if (! find_arg(buf, 'Y', &t.x.move.y)) t.x.move.y = last_y;
 	    if (! find_arg(buf, 'E', &t.x.move.e)) t.x.move.e = last_e;
@@ -1012,6 +1022,33 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 }
 
 static void
+produce_prime(extrusion_state_t *e)
+{
+    double start_x = last_x, start_y = last_y, start_z = last_z, start_e = last_e;
+    int i;
+
+    if (prime_info.len > 0) {
+	fprintf(o, "; Priming %d line%s of length %f starting at %f,%f,%f\n", prime_info.n, prime_info.n > 1 ? "s" : "", prime_info.len, prime_info.x, prime_info.y, layers[0].h);
+	move_to(prime_info.x, prime_info.y, layers[0].h);
+	for (i = 1; i <= prime_info.n; i++) {
+	    if (i > 1) move_to(NAN, prime_info.y + (i-1)*printer->nozzle, NAN);
+	    move_to_and_extrude(prime_info.x + (i % 2 == 1 ? prime_info.len : 0), NAN, NAN, last_e + prime_info.e * i, layers[0].h);
+	}
+	if (retract_mm > 0) {
+	    fprintf(o, "G1 E%f F%f\n", last_e + prime_info.e * prime_info.n - retract_mm, retract_mm_per_min);
+	}
+	fprintf(o, "G92 E%f\n", start_e);
+	fprintf(o, "; Priming complete\n");
+	e->next_move_full = 1;
+	last_e = start_e;
+    }
+
+    last_x = start_x;
+    last_y = start_y;
+    last_z = start_z;
+}
+
+static void
 produce_gcode()
 {
     int l = 0;
@@ -1038,7 +1075,7 @@ produce_gcode()
 	case MOVE:
 	    //assert(t == 0 || l >= n_layers || token.x.move.e == last_e || token.x.move.z == layers[l].z);
 	    update_last_state(&token);
-	    if (e.next_move_full) {
+	    if (e.next_move_full && token.x.move.changes_position) {
 		e.next_move_full = 0;
 		fprintf(o, "G1 X%f Y%f Z%f E%f F%f\n", token.x.move.x, token.x.move.y, token.x.move.z, token.x.move.e, token.x.move.f);
 	    } else {
@@ -1067,6 +1104,9 @@ produce_gcode()
 	case SET_E:
 	    last_e = token.x.e;
 	    fprintf(o, "%s", buf);
+	    break;
+	case START:
+	    produce_prime(&e);
 	    break;
 	default:
 	    fprintf(o, "%s", buf);
