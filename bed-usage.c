@@ -246,8 +246,8 @@ void bed_usage_add_object(bed_usage_t *b, double x0, double y0, double w0, doubl
 {
     int x = xy_to_bed_xy(x0);
     int y = xy_to_bed_xy(y0);
-    int w = w0 / CELL_SIZE;
-    int h = h0 / CELL_SIZE;
+    int w = ceil(w0 / CELL_SIZE);
+    int h = ceil(h0 / CELL_SIZE);
     int dx, dy;
     
     for (dx = 0; dx < w; dx++) {
