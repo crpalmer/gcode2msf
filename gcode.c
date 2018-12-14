@@ -368,7 +368,7 @@ compatible_runs(run_t *r1, run_t *r2)
 }
 
 static void
-prune_runs()
+merge_consecutive_runs()
 {
     int i, j, k;
     int next_run;
@@ -390,6 +390,83 @@ prune_runs()
     }
 
     n_runs = i;
+}
+
+static void merge_run(run_t *pre, run_t *next)
+{
+    pre->z = next->z;
+    pre->trailing_infill_mm = next->trailing_infill_mm;
+    pre->e += next->e;
+}
+
+static void
+merge_negative_height_runs()
+{
+    int i;
+    int next_run;
+    int n_merged = 0;
+
+    for (i = 0, next_run = 0; next_run < n_runs; i++) {
+	double last_z = i > 0 ? runs[i-1].z : 0;
+
+	runs[i] = runs[next_run++];
+	while (next_run < n_runs &&
+		runs[i].t == runs[next_run].t &&
+		runs[i].z < last_z &&
+		runs[next_run].z - last_z < printer->max_layer_height)
+	{
+	    merge_run(&runs[i], &runs[next_run++]);
+	    n_merged++;
+	}
+    }
+
+    n_runs = i;
+
+    if (n_merged > 0) fprintf(stderr, "Warning: %d runs were merged due to negative layer heights\n", n_merged);
+}
+    
+static void
+merge_compatible_runs()
+{
+    int i;
+    int next_run;
+
+    for (i = 0, next_run = 0; next_run < n_runs; i++) {
+int changed = 0;
+	double last_z = i > 0 ? runs[i-1].z : 0;
+
+	runs[i] = runs[next_run++];
+printf("run[%d] = %d @ %f -> %f LH %f\n", i, runs[i].t, runs[i].z, runs[i].e, runs[i].z - last_z);
+	while (next_run < n_runs &&
+	    runs[i].t == runs[next_run].t &&
+	    last_z < runs[i].z &&
+	    runs[i].z < runs[next_run].z &&
+	    runs[i].t == runs[next_run].t &&
+	    runs[next_run].z - last_z < printer->max_layer_height)
+	{
+printf("  merge: %d @ %f -> %f\n", runs[next_run].t, runs[next_run].z, runs[next_run].e);
+changed = 1;
+	    merge_run(&runs[i], &runs[next_run]);
+	    next_run++;
+	}
+
+	if (runs[i].z < last_z) {
+	    fprintf(stderr, "Cannot complete gcode processing.\nExtrusion at height %f occurs before extrusion at height %f\n", last_z, runs[i].z);
+	    exit(1);
+	}
+if (changed)
+printf("run[%d] = %d @ %f -> %f LH %f\n", i, runs[i].t, runs[i].z, runs[i].e, runs[i].z - last_z);
+    }
+
+    n_runs = i;
+}
+
+static void
+prune_runs()
+{
+    merge_consecutive_runs();
+    merge_negative_height_runs();
+    merge_compatible_runs();
 }
 
 static void

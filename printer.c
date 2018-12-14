@@ -19,6 +19,7 @@ static struct {
     { "bowdenTube", offsetof(printer_t, bowden_len), DOUBLE, -1 },
     { "filamentDiameter", offsetof(printer_t, filament), DOUBLE, -1 },
     { "nozzleDiameter", offsetof(printer_t, nozzle), DOUBLE, -1 },
+    { "max_layer_height", offsetof(printer_t, max_layer_height), DOUBLE, -1 },
     { "purgeLength", offsetof(printer_t, transition_len), DOUBLE, -1 },
     { "minPurgeLength", offsetof(printer_t, min_transition_len), DOUBLE, -1 },
     { "initialPurgeLength", offsetof(printer_t, early_transition_len), DOUBLE, -1 },
@@ -107,6 +108,8 @@ process_event:
 	}
 	yaml_event_delete(&event);
     }
+
+    if (printer->max_layer_height <= 0) printer->max_layer_height = printer->nozzle * 0.8;
 
     return 1;
 }
