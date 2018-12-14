@@ -15,11 +15,8 @@
 typedef struct {
     enum {
 	MOVE,
-	START_TOWER,
-	END_TOWER,
 	SET_E,
 	TOOL,
-	PING,
 	START,
 	OTHER,
 	FAN,
@@ -41,9 +38,7 @@ typedef struct {
     long pos;
 } token_t;
 
-typedef enum { NORMAL = 0, INFILL, SUPPORT } path_t;
-const char *path_names[3] = { "normal", "infill", "support" };
-
+static const char *path_names[] = { "normal", "infill", "support", "interface" };
 typedef enum { UNKNOWN = 0, KISSLICER, SIMPLIFY3D, SLIC3R } slicer_t;
 const char *slicer_names[] = { "Unknown", "KISSlicer", "Simplify3D", "Slic3r" };
 
@@ -66,23 +61,20 @@ int gcode_trace = 0;
 int validate_only = 0;
 int debug_tool_changes = 0;
 int stop_at_ping = -1;
+int squash_interface = 0;
 
-static double last_x = 0, last_y = 0, last_z = 0, start_e = 0, last_e = 0, last_f, last_e_z = NAN, acc_e = 0, last_reported_z = -1;
+static double last_x = 0, last_y = 0, last_z = 0, last_e = 0, last_f = 0;
+static double start_e = 0, start_z = NAN;
+static path_t start_path = NORMAL, cur_path = NORMAL;
 static double last_fan = 0;
-static double infill_start_e = NAN, support_start_e = NAN, support_end_e = NAN;
-static path_t last_e_path = NORMAL, cur_path = NORMAL;
-static double total_e = 0;
 static int tool = 0;
 static int seen_tool = 0;
 static int n_used_tools = 0;
-static double tower_z = -1;
-static int in_tower = 0;
-static int seen_ping = 0;
-static int started = 0;
 
 run_t runs[MAX_RUNS];
 int n_runs = 0;
 int used_tool[N_DRIVES] = { 0, };
+double tool_mm[N_DRIVES] = { 0, };
 bed_usage_t *bed_usage;
 
 splice_t splices[MAX_RUNS];
@@ -192,6 +184,7 @@ check_for_kisslicer_path_types()
     if (STRNCMP(buf, "; 'Destring/Wipe/Jump Path'") == 0) return;
 
     if (STRNCMP(buf, "; 'Support (may Stack) Path'") == 0) cur_path = SUPPORT;
+    else if (STRNCMP(buf, "; 'Support Interface Path'") == 0) cur_path = INTERFACE;
     else if (STRNCMP(buf, "; 'Sparse Infill Path'") == 0) cur_path = INFILL;
     else if (STRNCMP(buf, "; 'Stacked Sparse Infill Path'") == 0) cur_path = INFILL;
     else cur_path = NORMAL;
@@ -222,6 +215,7 @@ rewind_input()
     rewind(f);
     next_pos = 0;
     has_started = 0;
+    tool = 0;
 }
 
 static token_t
@@ -269,20 +263,6 @@ get_next_token_wrapped()
 	    return t;
 	}
 
-	if (STRNCMP(buf, "; finishing tower layer") == 0 ||
-	    STRNCMP(buf, "; finishing sparse tower layer") == 0) {
-	    t.t = START_TOWER;
-	    return t;
-	}
-	if (STRNCMP(buf, "; leaving transition tower") == 0) {
-	    t.t = END_TOWER;
-	    return t;
-	}
-	if (STRNCMP(buf, "; ping ") == 0) {
-	    t.t = PING;
-	    sscanf(buf, "; ping %d pause %d", &t.x.ping.num, &t.x.ping.step);
-	    return t;
-	}
 	if (STRNCMP(buf, "G92 ") == 0) {
 	    t.t = SET_E;
 	    if (find_arg(buf, 'E', &t.x.e)) return t;
@@ -311,8 +291,7 @@ get_next_token_wrapped()
 	    t.t = TOOL;
 	    t.x.tool = atoi(&buf[1]);
 	    return t;
-	}
-	check_for_gcode_params();
+	} check_for_gcode_params();
 	check_for_kisslicer_path_types();
 	check_for_simplify3d_path_types();
 	return t;
@@ -339,10 +318,7 @@ get_next_token()
     if (gcode_trace) {
 	printf("%8ld ", t.pos);
 	switch (t.t) {
-	case MOVE: printf("MOVE (%f,%f,%f) e=%f total_e=%f path=%s\n", t.x.move.x, t.x.move.y, t.x.move.z, t.x.move.e, total_e, path_names[cur_path]); break;
-	case START_TOWER: printf("START_TOWER\n"); break;
-	case END_TOWER: printf("END_TOWER\n"); break;
-	case PING: printf("PING %d.%d\n", t.x.ping.num, t.x.ping.step); break;
+	case MOVE: printf("MOVE (%f,%f,%f) e=%f path=%s%s\n", t.x.move.x, t.x.move.y, t.x.move.z, t.x.move.e, path_names[cur_path], t.x.move.changes_position ? " changes-pos" : ""); break;
 	case SET_E: printf("SET_E %f\n", t.x.e); break;
 	case START: printf("START\n"); break;
 	case TOOL: printf("TOOL %d\n", t.x.tool); break;
@@ -355,189 +331,125 @@ get_next_token()
     return t;
 }
 
-static double accumulated_e()
-{
-    return last_e - start_e;
-}
-
-static void
-accumulate()
-{
-    double delta_e = accumulated_e();
-    acc_e += delta_e;
-    total_e += delta_e;
-}
-
-static void
-reset_state()
-{
-    start_e = last_e;
-    acc_e = 0;
-    seen_ping = 0;
-    support_start_e = support_end_e = infill_start_e = NAN;
-}
-
-static void
-show_extrusion(char chr, int force)
-{
-    int bad = in_tower && tower_z != last_e_z && acc_e > 0;
-
-    last_reported_z = last_e_z;
-    if (bad || acc_e != 0 || force) {
-	if (validate_only && ! bad) return;
-	if (! validate_only && ! extrusions) return;
-
-	printf("%c", chr);
-	if (seen_tool) printf(" T%d", tool);
-	printf(" Z %f", last_e_z);
-	if (acc_e != 0) printf(" E %f", acc_e);
-	if (bad) printf(" *********** z delta = %f", last_e_z - tower_z);
-	if (seen_ping) printf(" [ping %d]", seen_ping);
-	printf("\n");
-    }
-}
-
 static void
 add_run(long offset)
 {
-    if (acc_e != 0) {
+    double delta_e = last_e - start_e;
+
+    if (start_path == INTERFACE && squash_interface) {
+	return;
+    }
+
+    if (delta_e > 0 && offset >= 0) {
 	if (! used_tool[tool]) {
 	    used_tool[tool] = 1;
 	    n_used_tools++;
 	}
 
-	runs[n_runs].z = last_e_z;
-	runs[n_runs].e = acc_e;
-	runs[n_runs].t = tool;
-	runs[n_runs].offset = offset;
-	runs[n_runs].trailing_infill_mm = isfinite(infill_start_e) ? total_e - infill_start_e : 0;
-	if (isfinite(support_start_e) && ! isfinite(support_end_e)) support_end_e = total_e;
-	runs[n_runs].leading_support_mm = isfinite(support_start_e) ? support_end_e - support_start_e : 0;
-	runs[n_runs].pre_transition = -1;
-	runs[n_runs].post_transition = -1;
-	runs[n_runs].next_move_no_extrusion = 0;
-	n_runs++;
+	if (n_runs > 0 && runs[n_runs-1].t == tool && runs[n_runs-1].z == start_z && runs[n_runs-1].path == start_path) {
+	    runs[n_runs-1].e += delta_e;
+	} else {
+	    runs[n_runs].z = start_z;
+	    runs[n_runs].e = delta_e;
+	    runs[n_runs].t = tool;
+	    runs[n_runs].path = start_path;
+	    runs[n_runs].offset = offset;
+	    runs[n_runs].next_move_no_extrusion = 0;
+	    n_runs++;
+	}
     }
+    tool_mm[tool] += delta_e;
+}
+
+static int
+compatible_runs(run_t *r1, run_t *r2)
+{
+    return r1->z >= r2->z && r1->t == r2->t;
+}
+
+static void
+prune_runs()
+{
+    int i, j, k;
+    int next_run;
+
+    for (i = 0, next_run = 0; next_run < n_runs; i++) {
+	runs[i] = runs[next_run];
+	runs[i].leading_support_mm = 0;
+	for (j = next_run; j < n_runs && compatible_runs(&runs[i], &runs[j]) && runs[j].path == SUPPORT; j++) {
+	    runs[i].leading_support_mm += runs[j].e;
+	}
+	for (j = next_run+1; j < n_runs && compatible_runs(&runs[i], &runs[j]); j++) {
+	    runs[i].e += runs[j].e;
+	}
+	runs[i].trailing_infill_mm = 0;
+	for (k = next_run-1; k >= next_run && runs[k].path == INFILL; k--)  {
+	    runs[i].trailing_infill_mm += runs[k].e;
+	}
+	next_run = j;
+    }
+
+    n_runs = i;
 }
 
 static void
 preprocess()
 {
-    long after_last_e_offset = 0;
-    int no_extrusion_after_last_e = 0;
-    int *check_next_move = NULL;
+    long start_offset = 0;
+    int check_next_move = 0;
 
     if (bed_usage) bed_usage_destroy(bed_usage);
     bed_usage = bed_usage_new();
 
-    reset_state();
     while (1) {
 	token_t t = get_next_token();
 	switch(t.t) {
 	case MOVE:
-	    if (check_next_move) {
-		*check_next_move = (t.x.move.e == last_e);
-		check_next_move = NULL;
-	    }
-	    if (t.x.move.e > last_e && t.x.move.z != last_e_z) {
-		accumulate();
-		bed_usage_new_layer(bed_usage, t.x.move.z);
-		if (started && isfinite(last_e_z)) {
-		    add_run(after_last_e_offset);
-		    runs[n_runs-1].next_move_no_extrusion = no_extrusion_after_last_e;
-		    show_extrusion('+', 0);
-		}
-		last_e_z = t.x.move.z;
-		last_e_path = cur_path;
-		reset_state();
-		if (cur_path == SUPPORT) {
-		    if (gcode_trace) printf("=== starting support at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    support_start_e = total_e;
-		    support_end_e = NAN;
-		}
-		if (cur_path == INFILL) {
-		    if (gcode_trace) printf("=== starting infill at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    infill_start_e = total_e;
-		}
-	    } else if (t.x.move.e != last_e) {
-	        if (last_e_path == SUPPORT && ! isfinite(support_end_e) && cur_path != SUPPORT) {
-		    if (gcode_trace) printf("*** support end at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    support_end_e = total_e + accumulated_e();
-		}
-
-		if (last_e_path == INFILL && cur_path != INFILL) {
-		    if (gcode_trace) printf("=== invalidating infill at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    infill_start_e = NAN + accumulated_e();
-		}
-		if (cur_path == INFILL && ! isfinite(infill_start_e)) {
-		    if (gcode_trace) printf("=== starting infill at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    infill_start_e = total_e + accumulated_e();
-		}
-		if (cur_path == SUPPORT && ! isfinite(support_start_e)) {
-		    if (gcode_trace) printf("=== starting support at z=%f total_e=%f\n", t.x.move.z, total_e);
-		    support_start_e = total_e + accumulated_e();
-		}
-		last_e_path = cur_path;
+	    if (check_next_move && t.x.move.changes_position) {
+		if (n_runs > 0) runs[n_runs-1].next_move_no_extrusion = t.x.move.e == last_e;
+		check_next_move = 0;
 	    }
 
-	    if (t.x.move.e != last_e) {
-		after_last_e_offset = ftell(f);
-		check_next_move = &no_extrusion_after_last_e;
+	    if (t.x.move.e > last_e && t.x.move.changes_position) {
+		if (start_z != t.x.move.z) bed_usage_new_layer(bed_usage, t.x.move.z);
+	        if (t.x.move.z != start_z || start_path != cur_path) {
+		    add_run(start_offset);
+		    start_z = t.x.move.z;
+		    start_path = cur_path;
+		    check_next_move = 1;
+	        }
+	        bed_usage_extrude(bed_usage, last_x, last_y, t.x.move.x, t.x.move.y);
+		if (start_offset < 0) start_offset = ftell(f);
 	    }
-
-	    if (t.x.move.e > last_e) bed_usage_extrude(bed_usage, last_x, last_y, t.x.move.x, t.x.move.y);
 
 	    update_last_state(&t);
 	    break;
-	case START_TOWER:
-	    accumulate();
-	    show_extrusion('+', 0);
-	    reset_state();
-	    tower_z = last_e_z;
-	    in_tower = 1;
-	    show_extrusion('>', 1);
-	    break;
-	case END_TOWER:
-	    accumulate();
-	    show_extrusion('<', 1);
-	    in_tower = 0;
-	    reset_state();
-	    break;
 	case SET_E:
-	    accumulate();
+	    add_run(start_offset);
 	    start_e = t.x.e;
 	    last_e = t.x.e;
+	    start_offset = -1;
 	    break;
 	case FAN:
 	    last_fan = t.x.fan;
 	    break;
 	case TOOL:
 	    if (tool != t.x.tool) {
-		if (! started) {
+		if (! has_started) {
 		    fprintf(stderr, "** ERROR *** Tool change before in prefix gcode\n");
 		    exit(1);
 		}
-		accumulate();
 		add_run(t.pos);
-		check_next_move = &runs[n_runs-1].next_move_no_extrusion;
-		no_extrusion_after_last_e = 0;
-		if (validate_only && acc_e == 0) printf("Z %.02f ******* Tool change with no extrusion, chroma may screw this up\n", last_z);
-		show_extrusion('+', 0);
-		reset_state();
+		check_next_move = 1;
 		tool = t.x.tool;
 		seen_tool = 1;
 	    }
 	    break;
-	case PING:
-	    seen_ping = t.x.ping.num;
-	    break;
 	case START:
-	    started = 1;
-	    last_e_z = NAN;
-	    accumulate();
-	    reset_state();
+	    start_z = last_z;;
 	    break;
 	case DONE:
+    	    prune_runs();
 	    return;
 	case KISS_EXT:
 	case OTHER:
@@ -1051,6 +963,7 @@ produce_gcode()
     int l = 0;
     int t = 0;
     extrusion_state_t e = { 0, };
+    double squash_e = NAN;
 
     last_e = last_x = last_y = last_z = 0;
 
@@ -1072,11 +985,21 @@ produce_gcode()
 	case MOVE:
 	    //assert(t == 0 || l >= n_layers || token.x.move.e == last_e || token.x.move.z == layers[l].z);
 	    update_last_state(&token);
-	    if (e.next_move_full && token.x.move.changes_position) {
-		e.next_move_full = 0;
-		fprintf(o, "G1 X%f Y%f Z%f E%f F%f\n", token.x.move.x, token.x.move.y, token.x.move.z, token.x.move.e, token.x.move.f);
+	    if (cur_path == INTERFACE && squash_interface) {
+		e.next_move_full = 1;
+		fprintf(o, "; SI: %s", buf);
+		squash_e = token.x.move.e;
 	    } else {
-		fprintf(o, "%s", buf);
+		if (isfinite(squash_e)) {
+		    fprintf(o, "; Squash Interface complete\nG92 E%f\n", squash_e);
+		    squash_e = NAN;
+		}
+		if (e.next_move_full && token.x.move.changes_position) {
+		    e.next_move_full = 0;
+		    fprintf(o, "G1 X%f Y%f Z%f E%f F%f\n", token.x.move.x, token.x.move.y, token.x.move.z, token.x.move.e, token.x.move.f);
+		} else {
+		    fprintf(o, "%s", buf);
+		}
 	    }
 	    break;
 	case FAN:

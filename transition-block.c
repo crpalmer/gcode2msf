@@ -447,10 +447,27 @@ place_prime()
     fprintf(stderr, "WARNING: failed to place purge lines\n");
 }
 
+static void
+group_transition_layers()
+{
+#if 1
+//transition_block_dump_transitions(stderr);
+#else
+    int i;
+    layer_t *l;
+
+    for (i = 0, l = layers; i++, l++) {
+	transition_t *t = &transitions[l->transition0];
+	if (i > 0 && l->n_transitions == 0 && t->from == t->to) {
+	    transition_t *t_pre = 
+#endif
+}
+
 void
 transition_block_create_from_runs()
 {
     int iterations = 0;
+    group_transition_layers();
     compute_transition_tower();
     prune_transition_tower();
     if (n_transitions > 0) {
