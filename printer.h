@@ -9,6 +9,7 @@ typedef struct {
     double bowden_len;
     double filament;
     double nozzle;
+    double max_layer_height;
     double transition_len;
     double min_transition_len;
     double early_transition_len;

@@ -6,14 +6,20 @@
 #define MAX_RUNS        100000
 #define N_DRIVES 4
 
+typedef enum { NORMAL = 0, INFILL, SUPPORT, INTERFACE } path_t;
+
 typedef struct {
+    int    t;
     double z;
     double e;
-    int    t;
     long   offset;
-    double trailing_infill_mm, leading_support_mm;
-    int    pre_transition, post_transition;
+    path_t path;
     int    next_move_no_extrusion;
+    double trailing_infill_mm, leading_support_mm;
+
+// temp
+    int    pre_transition, post_transition;
+
 } run_t;
 
 typedef struct {
@@ -42,6 +48,7 @@ extern int gcode_trace;
 extern int validate_only;
 extern int debug_tool_changes;
 extern int stop_at_ping;
+extern int squash_interface;
 
 void gcode_to_runs(const char *fname);
 void gcode_to_msf_gcode(const char *output_fname);
