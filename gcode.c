@@ -320,9 +320,12 @@ get_next_token_wrapped()
 	    t.x.tool = atoi(&buf[1]);
 	    in_slic3r_crap = 0;
 	    return t;
-	} check_for_gcode_params();
+	}
+
+	check_for_gcode_params();
 	check_for_kisslicer_path_types();
 	check_for_simplify3d_path_types();
+
 	return t;
     }
 
