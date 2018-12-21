@@ -9,7 +9,7 @@
 #include "materials.h"
 #include "transition-block.h"
 
-#define EXTRA_FILAMENT  75
+#define EXTRA_FILAMENT  150
 
 layer_t layers[MAX_RUNS];
 int n_layers;
