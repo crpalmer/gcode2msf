@@ -121,8 +121,12 @@ transition_length(int from, int to, double total_mm)
 
     if (from == to) return 0;
 
+    if (total_mm < PING_STABILIZE_MM) return printer->early_transition_len;
+
     if (in->strength == STRONG) {
-	factor = 0;
+	if (out->strength == STRONG) factor = 0.5;
+	else if (out->strength == WEAK) factor = 0;
+	else factor = 0.25;
     } else if (in->strength == WEAK) {
 	if (out->strength == WEAK) factor = 0.5;
 	else if (out->strength == STRONG) factor = 1;
@@ -226,9 +230,10 @@ add_transition(int from, int to, double z, run_t *run, run_t *pre_run, double *m
     t->mm_pre_transition = *filament_mm;
     t->offset = pre_run->offset;
     t->next_move_no_extrusion = pre_run->next_move_no_extrusion;
+    t->needs_retraction = ! pre_run->ends_with_retraction;
 
     if (printer->transition_in_infill && pre_run->trailing_infill_mm > 0) {
-	if (get_active_material(from)->strength == WEAK && get_active_material(to)->strength == STRONG) {
+	if (0 && get_active_material(from)->strength == WEAK && get_active_material(to)->strength == STRONG) {
 	    t->avail_infill = 0;
 	} else {
 	    t->avail_infill = pre_run->trailing_infill_mm;
