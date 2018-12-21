@@ -38,7 +38,7 @@ typedef struct {
     long pos;
 } token_t;
 
-static const char *path_names[] = { "normal", "infill", "support", "interface" };
+static const char *path_names[] = { "normal", "infill", "support", "interface", "unknown" };
 typedef enum { UNKNOWN = 0, KISSLICER, SIMPLIFY3D, SLIC3R } slicer_t;
 const char *slicer_names[] = { "Unknown", "KISSlicer", "Simplify3D", "Slic3r" };
 
@@ -64,7 +64,7 @@ int stop_at_ping = -1;
 int squash_interface = 0;
 
 static double last_x = 0, last_y = 0, last_z = 0, last_e = 0, last_f = 0;
-static double start_e = 0, start_z = NAN;
+static double start_e = 0, cur_max_e = 0, abs_start_e = 0, abs_max_e = 0, start_z = NAN;
 static int e_is_absolute = 1;
 static int in_slic3r_crap = 0;
 static path_t start_path = NORMAL, cur_path = NORMAL;
@@ -84,7 +84,7 @@ int n_splices = 0;
 ping_t pings[MAX_RUNS];
 int n_pings = 0;
 
-static double retract_mm = 0;
+double retract_mm = 0;
 static double retract_mm_per_min = 0;
 static double z_hop = 0;
 static double travel_mm_per_min = 0;
@@ -315,6 +315,14 @@ get_next_token_wrapped()
 	    t.x.tool--;
 	    return t;
 	}
+	if (STRNCMP(buf, "; Total Filament Volume Used: ") == 0) {
+	    continue;
+	}
+	if (STRNCMP(buf, "; Total Filament Length Used: ") == 0) {
+	    t.t = KISS_EXT;
+	    t.x.tool = -1;
+	    return t;
+	}
 	if (buf[0] == 'T' && isdigit(buf[1])) {
 	    t.t = TOOL;
 	    t.x.tool = atoi(&buf[1]);
@@ -366,30 +374,51 @@ get_next_token()
 static void
 add_run(long offset)
 {
-    double delta_e = last_e - start_e;
+    double delta_e;
+    double this_max_e;
+    int ends_with_retraction;
+    path_t path = start_path;
 
-    if (start_path == INTERFACE && squash_interface) {
+    start_path = UNKNOWN_PATH;
+
+    if (path == INTERFACE && squash_interface) {
 	return;
     }
 
-    if (delta_e > 0 && offset >= 0) {
-	if (! used_tool[tool]) {
-	    used_tool[tool] = 1;
-	    n_used_tools++;
-	}
+    this_max_e = abs_start_e + (cur_max_e - start_e);
+    delta_e = this_max_e - abs_max_e;
 
-	if (n_runs > 0 && runs[n_runs-1].t == tool && runs[n_runs-1].z == start_z && runs[n_runs-1].path == start_path) {
-	    runs[n_runs-1].e += delta_e;
-	} else {
-	    runs[n_runs].z = start_z;
-	    runs[n_runs].e = delta_e;
-	    runs[n_runs].t = tool;
-	    runs[n_runs].path = start_path;
-	    runs[n_runs].offset = offset;
-	    runs[n_runs].next_move_no_extrusion = 0;
-	    n_runs++;
-	}
+    if (this_max_e > abs_max_e) abs_max_e = this_max_e;
+
+    ends_with_retraction = (last_e < cur_max_e);
+
+    abs_start_e += last_e - start_e;
+    cur_max_e = last_e;
+
+    if (start_e < 0 || delta_e <= 0) {
+	return;
     }
+
+    if (! used_tool[tool]) {
+	used_tool[tool] = 1;
+	n_used_tools++;
+    }
+
+    if (n_runs > 0 && runs[n_runs-1].t == tool && runs[n_runs-1].z == start_z && runs[n_runs-1].path == path) {
+	runs[n_runs-1].e += delta_e;
+    } else {
+	runs[n_runs].z = start_z;
+	runs[n_runs].e = delta_e;
+	runs[n_runs].t = tool;
+	runs[n_runs].path = path == UNKNOWN_PATH ? NORMAL : path;
+	runs[n_runs].offset = offset;
+	runs[n_runs].next_move_no_extrusion = 0;
+	if (n_runs == 0) runs[0].e += printer->prime_mm - retract_mm;
+	n_runs++;
+    }
+
+    runs[n_runs-1].ends_with_retraction = ends_with_retraction;
+
     tool_mm[tool] += delta_e;
 }
 
@@ -402,23 +431,32 @@ compatible_runs(run_t *r1, run_t *r2)
 static void
 merge_consecutive_runs()
 {
-    int i, j, k;
+    int i, j;
     int next_run;
 
     for (i = 0, next_run = 0; next_run < n_runs; i++) {
+	int start_run = next_run;
+
 	runs[i] = runs[next_run];
 	runs[i].leading_support_mm = 0;
-	for (j = next_run; j < n_runs && compatible_runs(&runs[i], &runs[j]) && runs[j].path == SUPPORT; j++) {
-	    runs[i].leading_support_mm += runs[j].e;
-	}
-	for (j = next_run+1; j < n_runs && compatible_runs(&runs[i], &runs[j]); j++) {
-	    runs[i].e += runs[j].e;
-	}
 	runs[i].trailing_infill_mm = 0;
-	for (k = next_run-1; k >= next_run && runs[k].path == INFILL; k--)  {
-	    runs[i].trailing_infill_mm += runs[k].e;
+
+	while (next_run < n_runs && compatible_runs(&runs[i], &runs[next_run]) && runs[next_run].path == SUPPORT) {
+	    runs[i].leading_support_mm += runs[next_run].e;
+	    if (next_run > start_run) runs[i].e += runs[next_run].e;
+	    next_run++;
 	}
-	next_run = j;
+
+	while (next_run < n_runs && compatible_runs(&runs[i], &runs[next_run])) {
+	    if (next_run > start_run) runs[i].e += runs[next_run].e;
+	    next_run++;
+	}
+
+	for (j = next_run-1; j >= i && runs[j].path == INFILL; j--)  {
+	    runs[i].trailing_infill_mm += runs[j].e;
+	}
+
+	runs[i].offset = runs[next_run-1].offset;
     }
 
     n_runs = i;
@@ -427,8 +465,11 @@ merge_consecutive_runs()
 static void merge_run(run_t *pre, run_t *next)
 {
     pre->z = next->z;
-    pre->trailing_infill_mm = next->trailing_infill_mm;
+    if (next->trailing_infill_mm == next->e) pre->trailing_infill_mm += next->trailing_infill_mm;
+    else pre->trailing_infill_mm = next->trailing_infill_mm;
     pre->e += next->e;
+    pre->offset = next->offset;
+    pre->ends_with_retraction = next->ends_with_retraction;
 }
 
 static void
@@ -498,11 +539,15 @@ prune_runs()
 static void
 preprocess()
 {
-    long start_offset = 0;
     int check_next_move = 0;
 
     if (bed_usage) bed_usage_destroy(bed_usage);
     bed_usage = bed_usage_new();
+
+    start_path = UNKNOWN_PATH;
+    start_z = 0;
+    start_e = cur_max_e = 0;
+    abs_max_e = abs_start_e = 0;
 
     while (1) {
 	token_t t = get_next_token();
@@ -513,25 +558,33 @@ preprocess()
 		check_next_move = 0;
 	    }
 
-	    if (t.x.move.e > last_e && t.x.move.changes_position) {
+	    if (t.x.move.e > cur_max_e) cur_max_e = t.x.move.e;
+
+	    if (t.x.move.e != last_e && t.x.move.changes_position) {
+		if (abs_max_e == 0) {
+		    /* Delay setting this because we need to parse the retract_mm length first! */
+		    abs_max_e = abs_start_e = printer->prime_mm - retract_mm;
+		}
 		if (start_z != t.x.move.z) bed_usage_new_layer(bed_usage, t.x.move.z);
-	        if (t.x.move.z != start_z || start_path != cur_path) {
-		    add_run(start_offset);
+		if (start_path == UNKNOWN_PATH) {
+		    start_path = cur_path;
 		    start_z = t.x.move.z;
-		    start_e = last_e;
+		}
+	        if (t.x.move.z != start_z || start_path != cur_path) {
+		    add_run(t.pos);
+		    start_z = t.x.move.z;
+		    cur_max_e = start_e = last_e;
 		    start_path = cur_path;
 		    check_next_move = 1;
 	        }
 	        bed_usage_extrude(bed_usage, last_x, last_y, t.x.move.x, t.x.move.y);
-		if (start_offset < 0) start_offset = ftell(f);
 	    }
 
 	    update_last_state(&t);
 	    break;
 	case SET_E:
-	    add_run(start_offset);
-	    start_e = last_e = t.x.e;
-	    start_offset = -1;
+	    add_run(t.pos);
+	    cur_max_e = start_e = last_e = t.x.e;
 	    break;
 	case FAN:
 	    last_fan = t.x.fan;
@@ -543,7 +596,7 @@ preprocess()
 		    exit(1);
 		}
 		add_run(t.pos);
-		start_e = last_e;
+		cur_max_e = start_e = last_e;
 		check_next_move = 1;
 		tool = t.x.tool;
 		seen_tool = 1;
@@ -553,6 +606,7 @@ preprocess()
 	    start_z = last_z;;
 	    break;
 	case DONE:
+	    add_run(ftell(f));
     	    prune_runs();
 	    return;
 	case KISS_EXT:
@@ -564,8 +618,9 @@ preprocess()
 
 static int is_first_layer = 1;
 static double layer_transition_e;
-static double transition_e, transition_starting_e;
+static double transition_e;
 static double transition_pct;
+static double ping_schedule_e;
 static double ping_complete_e;
 static double total_ext[N_DRIVES];
 
@@ -621,7 +676,7 @@ move_to(double x, double y, double z)
 }
 
 static void
-do_retraction()
+do_retraction_transition()
 {
     if (retract_mm) {
 	transition_e -= retract_mm;
@@ -630,11 +685,29 @@ do_retraction()
 }
 
 static void
-undo_retraction()
+undo_retraction_transition()
 {
     if (retract_mm) {
 	transition_e += retract_mm;
 	fprintf(o, "G1 E%f F%f\n", e_is_absolute ? transition_e : retract_mm, retract_mm_per_min);
+    }
+}
+
+static void
+do_retraction_last_e()
+{
+    if (retract_mm) {
+	last_e -= retract_mm;
+	fprintf(o, "G1 E%f F%f\n", e_is_absolute ? last_e : -retract_mm, retract_mm_per_min);
+    }
+}
+
+static void
+undo_retraction_last_e()
+{
+    if (retract_mm) {
+	last_e += retract_mm;
+	fprintf(o, "G1 E%f F%f\n", e_is_absolute ? last_e : retract_mm, retract_mm_per_min);
     }
 }
 
@@ -683,16 +756,40 @@ move_off_tower(double x, double y)
 }
 
 static void
+check_ping_start(double x, double y, double start_total_e)
+{
+    if (ping_schedule_e > 0 && transition_e >= ping_schedule_e) {
+	do_retraction_transition();
+
+	ping_schedule_e = 0;
+	ping_complete_e = transition_e + 20 + retract_mm;
+	pings[n_pings].mm = start_total_e + transition_e;
+	n_pings++;
+
+	fprintf(o, "; ping %d pause 1 at %f\n", n_pings, pings[n_pings-1].mm);
+	if (stop_at_ping == n_pings) {
+		fclose(o);
+		exit(0);
+	}
+
+	if (printer->ping_off_tower) move_off_tower(x, y);
+	generate_pause(13000);
+	if (printer->ping_off_tower) move_to(x, y, NAN);
+	undo_retraction_transition();
+    }
+}
+
+static void
 check_ping_complete(double x, double y)
 {
-    if (ping_complete_e > 0 && transition_e > ping_complete_e) {
-	fprintf(o, "; Ping extrusion complete at %f, doing second pause\n", transition_e);
+    if (ping_complete_e > 0 && transition_e >= ping_complete_e) {
+	fprintf(o, "; ping %d pause 2 at %f (%.2fmm extra)\n", n_pings, pings[n_pings-1].mm + 20 + (transition_e - ping_complete_e), transition_e - ping_complete_e);
+	do_retraction_transition();
 	ping_complete_e = 0;
-	do_retraction();
 	if (printer->ping_off_tower) move_off_tower(x, y);
 	generate_pause(7000);
         if (printer->ping_off_tower) move_to(x, y, NAN);
-	undo_retraction();
+	undo_retraction_transition();
 	fprintf(o, "; Resuming transition block\n");
     }
 }
@@ -760,7 +857,6 @@ draw_perimeter(layer_t *l, transition_t *t)
 	double x = transition_block_corner_x(corner+i, i == 4 ? printer->nozzle / 2 : 0);
 	double y = transition_block_corner_y(corner+i, i == 4 ? printer->nozzle / 2 : 0);
         move_to_and_extrude_perimeter(x, y, NAN, extrusion_mm(l, last_x, last_y, x, y), l->h);
-	check_ping_complete(x, y);
 	last_x = x;
 	last_y = y;
     }
@@ -870,7 +966,7 @@ record_move_and_extrude(xye_t *xye, xy_t *xy, double e)
 }
 
 static void
-transition_fill(layer_t *l, transition_t *t)
+transition_fill(layer_t *l, transition_t *t, double start_total_e)
 {
     double stride0 = (1 / l->density) * printer->nozzle;
     double stride = sqrt(2 * stride0 * stride0);
@@ -890,7 +986,7 @@ transition_fill(layer_t *l, transition_t *t)
     start = transition_e;
 
     pct_to_xy(l, 0, transition_pct, &xy);
-    while ((is_last || transition_e - transition_starting_e < t->pre_mm + t->post_mm) && transition_pct < 1 - EPSILON) {
+    while ((is_last || transition_e < t->pre_mm + t->post_mm) && transition_pct < 1 - EPSILON) {
 	int is_y_first;
 
 	for (is_y_first = 0; is_y_first < 2 && transition_pct < 1 - EPSILON; is_y_first++) {
@@ -913,17 +1009,18 @@ transition_fill(layer_t *l, transition_t *t)
 	}
     }
 
-    scale = ((t->pre_mm + t->post_mm) - (start - transition_starting_e)) / (xye[n_xye-1].e - start);
+    scale = ((t->pre_mm + t->post_mm) - (start)) / (xye[n_xye-1].e - start);
 
     fprintf(o, "; Filling in the tower portion, density = %f, extrusion-width = %f\n", l->density, printer->nozzle * scale);
 
+    transition_e = start;
     for (i = 0; i < n_xye; i++) {
+	check_ping_start(xye[i].x, xye[i].y, start_total_e);
 	move_to_and_extrude(xye[i].x, xye[i].y, NAN, (xye[i].e - start) * scale + start, l->h);
 	check_ping_complete(xye[i].x, xye[i].y);
     }
 
-    assert(t->pre_mm + t->post_mm - 0.01 < transition_e - transition_starting_e &&
-	   transition_e - transition_starting_e < t->pre_mm + t->post_mm + 0.01);
+    assert(t->pre_mm + t->post_mm - 0.01 < transition_e && transition_e < t->pre_mm + t->post_mm + 0.01);
 
     if (transition_pct > 1) {
 	if (is_last) {} // fprintf(stderr, "WARNING: layer %d generated pct=%f extra transition\n", l->num + 1, transition_pct);
@@ -945,18 +1042,23 @@ report_speed(FILE *o, layer_t *l, double mm_per_min)
 static void
 generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 {
-    double original_e;
-    double actual_e;
+    double original_e, start_total_e;
     xy_t start_xy;
-    double start_total_e;
-
-    original_e = last_e;
-    transition_e = transition_starting_e = last_e;
 
     start_total_e = e->total_e + t->mm_from_runs;
 
-    fprintf(o, "; Transition: %d->%d with %f || %f mm %f mm since splice || total_e=%f acc_trans=%f acc_waste=%f || %f\n", t->from, t->to, t->pre_mm, t->post_mm, n_splices > 0 ? e->total_e - splices[n_splices-1].mm : e->total_e, e->total_e, e->acc_transition, e->acc_waste, t->mm_pre_transition);
-    fprintf(o, "; Speed: ");
+    if (t->from != t->to) {
+	e->total_e += t->mm_from_runs;
+	fprintf(o, "; splice at %2f = %2f + %.2f\n", e->total_e + t->pre_mm, e->total_e, t->pre_mm);
+	add_splice(t->from, e->total_e, t->pre_mm, e);
+    }
+
+    original_e = last_e;
+
+    fprintf(o, "; transition: %d->%d at %f splice length %f\n", t->from, t->to, start_total_e, n_splices > 1 ? splices[n_splices-1].mm - splices[n_splices-2].mm : splices[n_splices-1].mm);
+    if (t->needs_retraction) fprintf(o, ";     retraction needed\n");
+    fprintf(o, ";     length: %f (%f || %f)\n", t->pre_mm + t->post_mm, t->pre_mm, t->post_mm);
+    fprintf(o, ";      speed: ");
     report_speed(o, l, extrusion_speed(l->h));
     if (l->transition0 == t->num && l->use_perimeter) {
 	fprintf(o, ", perimeter: ");
@@ -964,15 +1066,10 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     }
     fprintf(o, "\n");
 
-    if (last_fan > 0) fprintf(o, "M107\n");
-
-    if (t->from != t->to) {
-	e->total_e += t->mm_from_runs;
-	add_splice(t->from, e->total_e, t->pre_mm, e);
-    }
-
-    // assume retraction was done just before tool change: do_retraction();
+    if (t->needs_retraction) do_retraction_last_e();
     move_to(NAN, NAN, l->z + z_hop);
+
+    if (last_fan > 0) fprintf(o, "M107\n");
 
     if (l->transition0 == t->num) {
 	transition_pct = 0;
@@ -984,31 +1081,31 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
     if (z_hop) move_to(NAN, NAN, l->z);
 
     if (t->ping) {
-	ping_complete_e = transition_starting_e + 20;
-
-	pings[n_pings].mm = start_total_e;
-	n_pings++;
-
-	fprintf(o, "; Starting initial ping pause at %f complete at %f (from %f)\n", pings[n_pings-1].mm, ping_complete_e, transition_starting_e);
-	if (stop_at_ping == n_pings) {
-		fclose(o);
-		exit(0);
-	}
-	if (printer->ping_off_tower) move_off_tower(start_xy.x, start_xy.y);
-	generate_pause(13000);
-	if (printer->ping_off_tower) move_to(start_xy.x, start_xy.y, NAN);
+	ping_schedule_e = 20 + retract_mm;
     } else {
-	ping_complete_e = 0;
+	ping_schedule_e = ping_complete_e = 0;
     }
 
-    undo_retraction();
+    undo_retraction_last_e();
+
+    fprintf(o, "G92 E0\n");
+    transition_e = 0;
 
     if (l->transition0 == t->num && l->use_perimeter) draw_perimeter(l, t);
-    transition_fill(l, t);
+    transition_fill(l, t, start_total_e);
 
-    do_retraction();
+    fprintf(o, "; transition done: %d->%d actually used %f mm for %f (%f || %f) at %f\n", t->from, t->to, transition_e, t->pre_mm + t->post_mm, t->pre_mm, t->post_mm, start_total_e + transition_e);
 
-    actual_e = transition_e - transition_starting_e;
+
+    e->acc_transition  += t->infill_mm + t->pre_mm + t->post_mm + t->support_mm;
+    e->acc_transition  += transition_e - (t->pre_mm + t->post_mm);
+    e->acc_waste       += transition_e;
+    e->total_e         += transition_e;
+    layer_transition_e += transition_e;
+
+    assert(t->num != l->transition0 + l->n_transitions - 1 || fabs(transition_pct - 1) < 0.001);
+
+    do_retraction_transition();
 
     if (z_hop) move_to(NAN, NAN, l->z+z_hop);
 
@@ -1019,19 +1116,10 @@ generate_transition(layer_t *l, transition_t *t, extrusion_state_t *e)
 	if (z_hop) move_to(NAN, NAN, last_z);
     }
 
-    // assume unretraction will done just immediately after tool change: undo_retraction();
+    if (t->needs_retraction) undo_retraction_transition();
 
     if (e_is_absolute) fprintf(o, "G92 E%f\n", original_e);
     if (last_fan > 0) fprintf(o, "M106 S%f\n", last_fan);
-    fprintf(o, "; Done transition: %d->%d actually used %f mm for %f + %f mm\n", t->from, t->to, actual_e, t->pre_mm, t->post_mm);
-
-    e->acc_transition  += t->infill_mm + t->pre_mm + t->post_mm + t->support_mm;
-    e->acc_transition  += actual_e - (t->pre_mm + t->post_mm);
-    e->acc_waste       += actual_e;
-    e->total_e         += actual_e;
-    layer_transition_e += actual_e;
-
-    assert(t->num != l->transition0 + l->n_transitions - 1 || fabs(transition_pct - 1) < 0.001);
 }
 
 static void
@@ -1114,19 +1202,28 @@ produce_gcode()
 	case TOOL:
 	    fprintf(o, "; Switching to tool %d\n", token.x.tool);
 	    if (debug_tool_changes) fprintf(o, "T%d\n", token.x.tool);
+	    tool = token.x.tool;
 	    break;
 	case DONE:
 	    e.total_e += transition_final_mm + transition_final_waste;
 	    add_splice(tool, e.total_e, 0, &e);
 	    splices[n_splices-1].waste += transition_final_waste;
 	    return;
-	case KISS_EXT: {
-	    double mm = total_ext[token.x.tool];
-	    if (token.x.tool == tool) mm += transition_final_mm + transition_final_waste;
-	    if (transition_block.area == 0) mm += printer->prime_mm;
-	    fprintf(o, ";    Ext %d = %8.2f mm  (%.03f cm^3)\n", token.x.tool+1, mm, filament_length_to_mm3(mm)/10/10/10);
+	case KISS_EXT:
+	    if (token.x.tool <= 0) {
+		double total = 0;
+		int i;
+
+		for (i = 0; i < N_DRIVES; i++) total += total_ext[i];
+		total += transition_final_mm;
+		if (n_splices > 0) total += e.total_e - splices[n_splices-1].mm;
+		if (token.x.tool == 0) {
+		     fprintf(o, ";    Ext 1 = %8.2f mm  (%.03f cm^3)\n", total, filament_length_to_mm3(total)/10/10/10);
+		} else {
+		     fprintf(o, "; Total Filament Length Used: %.2f\n", total);
+		}
+	    }
 	    break;
-	}
 	case SET_E:
 	    last_e = token.x.e;
 	    fprintf(o, "%s", buf);

@@ -443,7 +443,6 @@ place_prime()
 	    prime_info.x   = x;
 	    prime_info.y   = y;
 	    prime_info.e   = filament_mm3_to_length(w * printer->nozzle * layers[0].h);
-	    transitions[0].mm_from_runs += printer->prime_mm;
 	    printf("Placed priming at %f,%f with %d lines of length %f\n", x, y, n, w);
 	    return;
 	}

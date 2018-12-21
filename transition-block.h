@@ -26,6 +26,7 @@ typedef struct {
     double avail_support;
     int ping;
     int next_move_no_extrusion;
+    int needs_retraction;
 } transition_t;
 
 typedef struct {

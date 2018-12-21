@@ -6,7 +6,7 @@
 #define MAX_RUNS        100000
 #define N_DRIVES 4
 
-typedef enum { NORMAL = 0, INFILL, SUPPORT, INTERFACE } path_t;
+typedef enum { NORMAL = 0, INFILL, SUPPORT, INTERFACE, UNKNOWN_PATH } path_t;
 
 typedef struct {
     int    t;
@@ -15,6 +15,7 @@ typedef struct {
     long   offset;
     path_t path;
     int    next_move_no_extrusion;
+    int    ends_with_retraction;
     double trailing_infill_mm, leading_support_mm;
 
 // temp
@@ -42,6 +43,7 @@ extern splice_t splices[MAX_RUNS];
 extern int n_splices;
 extern ping_t pings[MAX_RUNS];
 extern int n_pings;
+extern double retract_mm;
 
 extern int extrusions;
 extern int gcode_trace;

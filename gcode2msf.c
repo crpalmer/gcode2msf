@@ -20,19 +20,27 @@ output_summary()
     int layer = 1;
     double last_layer_z = 0;
     double total[N_DRIVES] = { 0, };
+    char buf[500];
 
     printf("Layer by layer extrusions\n");
     printf("-------------------------\n");
     for (i = 0; i < n_runs; i = j) {
-	int gap = N_DRIVES * 15 + 10;
+	double layer_total = 0;
+	int gap = N_DRIVES * 26 + 5;
+
 	printf("%5d %6.02f %6.02f", layer++, runs[i].z - last_layer_z, runs[i].z);
 	last_layer_z = runs[i].z;
 	for (j = i; j < n_runs && runs[i].z == runs[j].z; j++) {
 	    total[runs[j].t] += runs[j].e;
-	    printf(" %10.2f [%d]%c", runs[j].e, runs[j].t, runs[j].next_move_no_extrusion ? '!' : ' ');
-	    gap -= 15;
+	    buf[0] = '\0';
+	    if (runs[j].leading_support_mm > 0) sprintf(&buf[strlen(buf)], "%.2f|", runs[j].leading_support_mm);
+	    sprintf(&buf[strlen(buf)], "%.2f", runs[j].e);
+	    if (runs[j].trailing_infill_mm > 0) sprintf(&buf[strlen(buf)], "=%.2f", runs[j].trailing_infill_mm);
+	    printf(" %20s [%d]%c%c", buf, runs[j].t, runs[j].next_move_no_extrusion ? '!' : ' ', runs[j].ends_with_retraction ? 'R' : ' ');
+	    layer_total += runs[j].e;
+	    gap -= 26;
 	}
-	printf("%*c totals:", gap, ' ');
+	printf("%*c %10.2f totals:", gap, ' ', layer_total);
 	for (k = 0; k < N_DRIVES; k++) {
 	    printf(" %12.2f", total[k]);
 	}
