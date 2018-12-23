@@ -26,6 +26,7 @@ typedef struct {
     double min_bottom_density;
     int ping_off_tower;
     double prime_mm;
+    int pings_ignore_retraction;
 } printer_t;
 
 extern printer_t *printer;

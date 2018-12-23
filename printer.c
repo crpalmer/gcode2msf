@@ -36,6 +36,7 @@ static struct {
     { "minBottomDensity", offsetof(printer_t, min_bottom_density), DOUBLE, -1 },
     { "pingOffTower", offsetof(printer_t, ping_off_tower), BOOLEAN, -1 },
     { "prime_mm", offsetof(printer_t, prime_mm), DOUBLE, -1 },
+    { "pings_ignore_retraction", offsetof(printer_t, pings_ignore_retraction), BOOLEAN, -1 },
 };
 
 #define N_KEYS (sizeof(keys) / sizeof(keys[0]))

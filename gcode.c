@@ -764,6 +764,7 @@ check_ping_start(double x, double y, double start_total_e)
 	ping_schedule_e = 0;
 	ping_complete_e = transition_e + 20 + retract_mm;
 	pings[n_pings].mm = start_total_e + transition_e;
+	if (printer->pings_ignore_retraction) pings[n_pings].mm += retract_mm;
 	n_pings++;
 
 	fprintf(o, "; ping %d pause 1 at %f\n", n_pings, pings[n_pings-1].mm);
