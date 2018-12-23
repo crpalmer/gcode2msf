@@ -16,7 +16,7 @@ typedef struct {
     double transition_target;
     int    transition_in_infill;
     int    transition_in_support;
-    double print_speed;
+    double print_speed_mm_per_min;
     double perimeter_speed_multiplier;
     double min_density;
     double perimeter_speed;

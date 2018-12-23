@@ -26,7 +26,7 @@ static struct {
     { "purgeTarget", offsetof(printer_t, transition_target), DOUBLE, -1 },
     { "transitionInInfill", offsetof(printer_t, transition_in_infill), BOOLEAN, -1} ,
     { "transitionInSupport", offsetof(printer_t, transition_in_support), BOOLEAN, -1} ,
-    { "printSpeed", offsetof(printer_t, print_speed), DOUBLE, -1 },
+    { "printSpeed", offsetof(printer_t, print_speed_mm_per_min), DOUBLE, -1 },
     { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed_multiplier), DOUBLE, -1},
     { "minDensity", offsetof(printer_t, min_density), DOUBLE, -1 },
     { "perimeterSpeedMultiplier", offsetof(printer_t, perimeter_speed), DOUBLE, -1 },
@@ -111,6 +111,7 @@ process_event:
     }
 
     if (printer->max_layer_height <= 0) printer->max_layer_height = printer->nozzle * 0.8;
+    printer->print_speed_mm_per_min *= 60;
 
     return 1;
 }

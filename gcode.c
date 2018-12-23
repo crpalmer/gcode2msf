@@ -627,8 +627,8 @@ static double total_ext[N_DRIVES];
 static double
 base_extrusion_speed(double layer_height)
 {
+    if (printer->print_speed_mm_per_min > 0) return printer->print_speed_mm_per_min;
     if (infill_mm_per_min > 0) return infill_mm_per_min;
-    if (printer->print_speed > 0) return printer->print_speed;
     return 30*60;
 }
 
