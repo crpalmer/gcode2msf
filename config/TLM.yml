@@ -27,12 +27,12 @@ bowdenTube: false
 firmwarePurge: 0
 transitions:
   method: 1
-  purgeLength: 130
-  minPurgeLength: 70
-  initialPurgeLength: 160
-  purgeTarget: 0.2
-  transitionInInfill: true
-  transitionInSupport: true
+  purgeLength: 100
+  minPurgeLength: 50
+  initialPurgeLength: 130
+  purgeTarget: 0.25
+  transitionInInfill: false
+  transitionInSupport: false
   towers:
     printSpeed: 60
     extrusionWidth: auto
@@ -60,3 +60,4 @@ calibration:
   printValue: 112953
   calibrationGCodeLength: 3761.4
 prime_mm: 25
+pings_ignore_retraction: true
