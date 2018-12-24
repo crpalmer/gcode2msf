@@ -26,7 +26,6 @@ prime_info_t prime_info;
 #define MIN_SPLICE_LEN		 80
 #define MIN_PING_LEN		 22	/* Really 20, but give a little slack for pinging off tower */
 #define DENSITY_FOR_PERIMETER	0.2
-#define PING_STABILIZE_MM	5000
 
 static double
 layer_transition_mm(layer_t *l)
@@ -114,14 +113,14 @@ static double
 transition_length(int from, int to, double total_mm)
 {
     double mn = printer->min_transition_len;
-    double mx = total_mm < PING_STABILIZE_MM ? printer->early_transition_len : printer->transition_len;
+    double mx = total_mm < printer->ping_stabilize_mm ? printer->early_transition_len : printer->transition_len;
     active_material_t *in = get_active_material(to);
     active_material_t *out = get_active_material(from);
     double factor;
 
     if (from == to) return 0;
 
-    if (total_mm < PING_STABILIZE_MM) return printer->early_transition_len;
+    if (total_mm < printer->ping_stabilize_mm) return printer->early_transition_len;
 
     if (in->strength == STRONG) {
 	if (out->strength == STRONG) factor = 0.5;

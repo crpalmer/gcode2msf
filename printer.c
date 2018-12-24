@@ -37,6 +37,7 @@ static struct {
     { "pingOffTower", offsetof(printer_t, ping_off_tower), BOOLEAN, -1 },
     { "prime_mm", offsetof(printer_t, prime_mm), DOUBLE, -1 },
     { "pings_ignore_retraction", offsetof(printer_t, pings_ignore_retraction), BOOLEAN, -1 },
+    { "ping_stabilize_mm", offsetof(printer_t, ping_stabilize_mm), DOUBLE, -1 },
 };
 
 #define N_KEYS (sizeof(keys) / sizeof(keys[0]))
@@ -54,6 +55,7 @@ printer_load(const char *fname)
     if ((p = yaml_wrapper_new(fname)) == NULL) return 0;
 
     printer = calloc(sizeof(*printer), 1);
+    printer->ping_stabilize_mm = 5000;
 
     for (;;) {
 	if (! yaml_wrapper_event(p, &event)) break;
