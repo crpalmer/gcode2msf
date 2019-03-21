@@ -56,8 +56,8 @@ pings:
   pingOffTower: true
   mechanicalPingGCode: ''
 calibration:
-  loadingOffset: 33519
-  printValue: 112953
-  calibrationGCodeLength: 3761.4
+  loadingOffset: 31512
+  printValue: 278739
+  calibrationGCodeLength: 9220.98
 prime_mm: 25
 pings_ignore_retraction: true
