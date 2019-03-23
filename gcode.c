@@ -222,6 +222,14 @@ rewind_input()
     tool = 0;
 }
 
+static int
+is_gcode_token(const char *buf, const char *token)
+{
+    size_t len = strlen(token);
+
+    return strncmp(buf, token, len) == 0 && (buf[len] == '\0' || isspace(buf[len]) || buf[len] == ';');
+}
+
 static token_t
 get_next_token_wrapped()
 {
@@ -262,12 +270,12 @@ get_next_token_wrapped()
 	    return t;
 	}
 
-	if (STRNCMP(buf, "M82 ") == 0 || strcmp(buf, "M82") == 0) {
+	if (is_gcode_token(buf, "M82")) {
 	    e_is_absolute = 1;
 	    continue;
 	}
 
-	if (STRNCMP(buf, "M83 ") == 0 || strcmp(buf, "M83") == 0) {
+	if (is_gcode_token(buf, "M83")) {
 	    e_is_absolute = 0;
 	    continue;
 	}
