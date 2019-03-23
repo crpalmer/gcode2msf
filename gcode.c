@@ -256,17 +256,7 @@ get_next_token_wrapped()
 	    if (! find_arg(buf, 'E', &t.x.move.e)) t.x.move.e = last_e;
 	    else if (! e_is_absolute) t.x.move.e += last_e;
 	    if (! find_arg(buf, 'F', &t.x.move.f)) t.x.move.f = last_f;
-	    if (! find_arg(buf, 'Z', &t.x.move.z)) {
-		t.x.move.z = last_z;
-	    } else {
-		if (slicer == SLIC3R && ! has_started) {
-		    next_pos = t.pos;
-		    fseek(f, next_pos, SEEK_SET);
-		    t.t = START;
-		    has_started = 1;
-		    return t;
-		}
-	    }
+	    if (! find_arg(buf, 'Z', &t.x.move.z)) t.x.move.z = last_z;
 	    return t;
 	}
 
@@ -332,6 +322,14 @@ get_next_token_wrapped()
 	    return t;
 	}
 	if (buf[0] == 'T' && isdigit(buf[1])) {
+	    if (slicer == SLIC3R && ! has_started) {
+		next_pos = t.pos;
+		fseek(f, next_pos, SEEK_SET);
+		t.t = START;
+		has_started = 1;
+		return t;
+	    }
+
 	    t.t = TOOL;
 	    t.x.tool = atoi(&buf[1]);
 	    in_slic3r_crap = 0;
