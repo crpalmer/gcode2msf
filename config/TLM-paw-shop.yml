@@ -1,0 +1,64 @@
+version: 2
+name: TLM - 0.6mm nozzle
+preset: tevo_littlemonster
+gpxProfile: false
+gpxConfigPath: ''
+inputs:
+  - gcode
+engine: reprap
+postprocessing: false
+volumetric: false
+independentExtruderAxes: false
+extruderStepsPerMM: 0
+filamentDiameter: 1.75
+nozzleDiameter: 0.6
+extruderCount: 1
+printExtruder: false
+printBed:
+  circular: true
+  x: 0
+  'y': 0
+  diameter: 300
+  origin: middle
+  originOffsets:
+    x: 150
+    'y': 150
+bowdenTube: false
+firmwarePurge: 0
+transitions:
+  method: 1
+  purgeLength: 200
+  minPurgeLength: 150
+  initialPurgeLength: 200
+  purgeTarget: 0.3
+  transitionInInfill: false
+  transitionInSupport: false
+  towers:
+    printSpeed: 60
+    extrusionWidth: auto
+    minDensity: 0.05
+    minBottomDensity: 0.8
+    maxDensity: 1
+    perimeterSpeedMultiplier: 1
+    forceBottomPerimeter: true
+    infillPerimeterOverlap: auto
+  sideTransitions:
+    purgeSpeed: 4
+    purgeInPlace: false
+    coordinates:
+      x: 0
+      'y': 0
+    purgeEdge: west
+    purgeEdgeOffset: 2
+pings:
+  jogPauses: false
+  retraction: auto
+  pingOffTower: true
+  mechanicalPingGCode: ''
+calibration:
+  loadingOffset: 31512
+  printValue: 278739
+  calibrationGCodeLength: 9220.98
+prime_mm: 50
+pings_ignore_retraction: true
+rapidXYspeed: 9000
