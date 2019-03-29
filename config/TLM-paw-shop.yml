@@ -61,4 +61,3 @@ calibration:
   calibrationGCodeLength: 9220.98
 prime_mm: 50
 pings_ignore_retraction: true
-rapidXYspeed: 9000
