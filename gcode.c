@@ -123,6 +123,14 @@ struct {
     { ";   rapidXYspeed,", &travel_mm_per_min, NULL },
     { ";   defaultSpeed,", &s3d_default_speed, NULL },
     { ";   outlineUnderspeed,", &infill_mm_per_min, s3d_speed },
+    /* Slic3r */
+    { "; retract_length = ", &retract_mm, NULL },
+    { "; retract_speed = ", &retract_mm_per_min, mm_per_sec_to_per_min },
+    { "; retract_lift = ", &z_hop, NULL },
+    { "; travel_speed = ", &travel_mm_per_min, mm_per_sec_to_per_min },
+    { "; infill_speed = ", &infill_mm_per_min, mm_per_sec_to_per_min },
+    { "; first_layer_speed = ", &first_layer_mm_per_min, mm_per_sec_to_per_min },
+    { "; max_volumetric_speed = ", &flow_max_mm3_per_sec, NULL },
 };
 
 #define N_GCODE_PARAMS (sizeof(gcode_params) / sizeof(gcode_params[0]))
