@@ -270,12 +270,12 @@ get_next_token_wrapped()
 
 	if (is_gcode_token(buf, "M82")) {
 	    e_is_absolute = 1;
-	    continue;
+	    return t;
 	}
 
 	if (is_gcode_token(buf, "M83")) {
 	    e_is_absolute = 0;
-	    continue;
+	    return t;
 	}
 
 	if (STRNCMP(buf, "; CP TOOLCHANGE UNLOAD") == 0) {
