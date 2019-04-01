@@ -79,7 +79,7 @@ void bed_usage_new_layer(bed_usage_t *b, double z)
 
 static void mark(bed_usage_t *b, double x0, double y0)
 {
-    int x = x0, y = y0;
+    int x = x0 / CELL_SIZE, y = y0 / CELL_SIZE;
 
     if (printer->circular) {
 	x += printer->diameter / 2.0 / CELL_SIZE;
@@ -92,49 +92,64 @@ static void mark(bed_usage_t *b, double x0, double y0)
     }
 }
 
+void plot_line_low(bed_usage_t *b, double x0, double y0, double x1, double y1)
+{
+    double dx = x1 - x0;
+    double dy = y1 - y0;
+    double yi = 1;
+    double D, x, y;
+
+    if (dy < 0) {
+         yi = -1;
+         dy = -dy;
+    }
+
+    D = 2*dy - dx;
+    y = y0;
+
+    for (x = x0; x <= x1; x++) {
+	mark(b, x, y);
+        if (D > 0) {
+            y = y + yi;
+            D = D - 2*dx;
+	}
+        D = D + 2*dy;
+    }
+}
+
+void plot_line_high(bed_usage_t *b, double x0, double y0, double x1, double y1)
+{
+    double dx = x1 - x0;
+    double dy = y1 - y0;
+    double xi = 1;
+    double D, x, y;
+
+    if (dx < 0) {
+        xi = -1;
+        dx = -dx;
+    }
+
+    D = 2*dx - dy;
+    x = x0;
+
+    for (y = y0; y <= y1; y++) {
+        mark(b, x, y);
+        if (D > 0) {
+            x = x + xi;
+            D = D - 2*dy;
+	}
+        D = D + 2*dx;
+    }
+}
+
 void bed_usage_extrude(bed_usage_t *b, double x0, double y0, double x1, double y1)
 {
-     double delta_x;
-     double delta_y;
-     double delta_err;
-     int sign_x, sign_y;
-     int x, y, x_end, y_end;
-
-     x0 /= CELL_SIZE;
-     x1 /= CELL_SIZE;
-     y0 /= CELL_SIZE;
-     y1 /= CELL_SIZE;
-
-     delta_x = x1 - x0;
-     delta_y = y1 - y0;
-     delta_err = abs(delta_y / delta_x);
-
-     sign_x = delta_x > 0 ? 1 : -1;
-     sign_y = delta_y > 0 ? 1 : -1;
-
-     x = (int) x0;
-     y = (int) y0;
-     x_end = (int) x1;
-     y_end = (int) y1;
-
-     if (x == x_end) { /* vertical line */
-	while (y != y_end + sign_y) {
-	    mark(b, x0, y);
-	    y += sign_y;
-	}
-    } else {
-        double error = 0;
-
-	while (x != x_end + sign_x) {
-	    mark(b, x, y);
-	    error += delta_err;
-	    if (error >= 0.5) {
-		y += sign_y;
-		//if (error >= 0.5) mark(b, x, y);
-		error -= 1;
-	    }
-	    x += sign_x;
-	}
+    if (fabs(y1 - y0) < fabs(x1 - x0)) {
+	if (x0 > x1) plot_line_low(b, x1, y1, x0, y0);
+	else plot_line_low(b, x0, y0, x1, y1);
+     } else {
+	if (y0 > y1) plot_line_high(b, x1, y1, x0, y0);
+	else plot_line_high(b, x0, y0, x1, y1);
     }
 }
 
