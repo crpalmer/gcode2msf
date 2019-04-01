@@ -1,4 +1,5 @@
 *.o
 *.d
+*.exe
 gcode2msf
 msf2text
